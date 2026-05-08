@@ -170,6 +170,9 @@ public MemberUseCaseTest(
 
 ### 테스트 메서드 구조
 - given/when/then을 **빈 줄로 구분** (주석 사용 X)
+- 한 테스트는 한 동작(when)만 검증
+- **하나의 동작에 대한 다수 검증은 `assertAll`로 묶는다** — 첫 실패에서 멈추지 않고 모든 검증 결과를 보기 위함
+- 단언이 1개뿐일 때는 `assertAll` 없이 단독 사용 가능
 
 ```java
 @Test
@@ -177,9 +180,13 @@ void 브랜드를_조회하면_브랜드_정보를_반환한다() {
     Brand brand = BrandFixture.aValidBrand();
     brandRepository.save(brand);
 
-    Brand found = brandService.getBrand(brand.getId());
+    Brand result = brandService.getBrand(brand.getId());
 
-    assertThat(found.getName()).isEqualTo(brand.getName());
+    assertAll(
+            () -> assertThat(result.getId()).isEqualTo(brand.getId()),
+            () -> assertThat(result.getName()).isEqualTo(BrandFixture.DEFAULT_NAME),
+            () -> assertThat(result.getDescription()).isEqualTo(BrandFixture.DEFAULT_DESCRIPTION)
+    );
 }
 ```
 

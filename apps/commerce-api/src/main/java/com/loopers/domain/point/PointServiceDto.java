@@ -1,5 +1,7 @@
 package com.loopers.domain.point;
 
+import com.loopers.domain.shared.Money;
+
 public class PointServiceDto {
     public record CreateInitialCommand(Long memberId) {
     }

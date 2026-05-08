@@ -97,16 +97,23 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 
 → `infrastructure-layer` skill의 상세 규칙을 따름.
 
+### Repository 테스트 작성 기준
+- **테스트 작성 X**: Spring Data JPA가 자동 생성하는 메서드 쿼리만 사용하는 경우
+  (예: `findById`, `findByBrandId` 등 메서드명 규칙으로 만든 쿼리)
+- **테스트 작성 O**: `@Query` 사용, QueryDSL, 복잡한 조건/조인,
+  네이티브 쿼리 등 검증 가치가 있는 경우
+- 테스트 어노테이션은 `@DataJpaTest` 사용 (`@SpringBootTest` 금지)
+
 ### 진행 순서
-1. **Repository 통합 테스트 작성** (`@DataJpaTest` 또는 `@SpringBootTest`)
-    - 기본 CRUD 동작
-    - 도메인 특수 쿼리 (예: `findByEmail`)
+1. **(필요 시) Repository 통합 테스트 작성** (`@DataJpaTest`)
+    - 위 "Repository 테스트 작성 기준"을 먼저 검토
+    - 메서드 쿼리만 사용하는 단순 CRUD라면 이 단계 생략
 2. **JpaRepository 인터페이스 작성**
 3. **RepositoryImpl 작성** (`domain.*Repository` 구현)
-4. **테스트 통과 확인**
+4. **테스트가 있다면 통과 확인**
 
 ### 완료 조건
-- [ ] Repository 통합 테스트 통과
+- [ ] Repository 테스트 작성 기준에 부합하는 테스트가 있다면 통과
 - [ ] `domain.*Repository` 인터페이스의 모든 메서드 구현됨
 - [ ] 별도 Entity 클래스 만들지 않음 (도메인 엔티티 직접 사용)
 
@@ -117,7 +124,7 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 작성된 것:
 - JpaRepository: ...
 - RepositoryImpl: ...
-- Repository 통합 테스트: ...
+- Repository 통합 테스트: ... (작성한 경우만)
 
 다음으로 Application Layer를 진행할까요?
 ```

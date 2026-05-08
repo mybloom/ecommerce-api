@@ -1,0 +1,149 @@
+---
+name: architecture-rules
+description: com.loopers 패키지의 Spring Boot 이커머스 코드를 작성, 수정, 리뷰할 때 항상 참조. 레이어 의존성 방향, 패키지 구조, 예외 처리(CoreException/ErrorType), 네이밍 컨벤션, 참고 구현체 위치를 담음. 새 기능 추가, 기존 코드 수정, 코드 리뷰, 리팩토링 모든 작업에 적용됨.
+---
+
+# eCommerce API — 아키텍처 규칙
+
+## 프로젝트 개요
+
+- 멀티모듈 Gradle 프로젝트. 메인 개발은 `apps/commerce-api/`에서 진행
+- DDD 레이어드 아키텍처 (interfaces → application → domain ← infrastructure)
+- TFD(Test-First Development)로 개발: 레이어별로 테스트 → 최소 구현 → 다음 레이어 순서
+- 베이스 패키지: `com.loopers`
+
+## 의존성 방향 (절대 규칙)
+
+```
+interfaces.api  →  application  →  domain  ←  infrastructure
+```
+
+### 허용되는 의존
+- `interfaces.api` → `application` (UseCase 호출)
+- `application` → `domain` (도메인 객체/서비스/Repository 인터페이스 사용)
+- `infrastructure` → `domain` (Repository 인터페이스 구현)
+
+### 절대 금지
+- ❌ `domain`이 `application` 또는 `interfaces` 레이어를 import
+- ❌ `interfaces.api`가 `domain`을 직접 호출 (반드시 `application` 경유)
+- ❌ `infrastructure`가 `application`이나 `interfaces`를 import
+
+위반 발견 시 작업을 중단하고 사용자에게 보고할 것.
+
+## 패키지 구조와 네이밍
+
+### `interfaces.api.{도메인}`
+HTTP 진입점. Spring MVC 사용.
+- `*V1Controller` — REST 컨트롤러 (`implements *V1ApiSpec`)
+- `*V1ApiSpec` — API 명세 인터페이스 (Swagger/OpenAPI 어노테이션 분리용)
+- `*V1Dto` — 요청/응답 DTO를 담는 outer 클래스
+  - 내부 record: `*Request` (요청), `*Response` (응답)
+  - `*Request`는 `toInfo()` 메서드로 `*UseCaseDto.*Info`로 변환
+  - `*Response`는 정적 `from(*UseCaseDto.*Result)` 팩토리 메서드 보유
+- 책임: HTTP ↔ DTO 변환만. 비즈니스 로직 금지.
+
+### `application.{도메인}`
+유스케이스 오케스트레이션. 트랜잭션 경계.
+- `*UseCase` — 유스케이스 진입점 (`@Component` 사용)
+- `*UseCaseDto` — UseCase 입출력 DTO를 담는 outer 클래스 (도메인 객체를 외부에 직접 노출하지 않음)
+  - 입력 record: `*Info`
+  - 출력 record: `*Result`
+  - `*Info`는 `toCommand()` 메서드로 `*ServiceDto.*Command`로 변환
+  - `*Result`는 정적 `from(*ServiceDto.*Query)` 팩토리 메서드 보유
+- 책임: 트랜잭션 관리(`@Transactional`), 도메인 객체 조합, 외부 시스템 호출 조정.
+- 비즈니스 규칙은 도메인에 위임. 여기서는 "흐름"만.
+
+### `domain.{도메인}`
+비즈니스 로직 + JPA 영속성.
+- 도메인 엔티티 (예: `Member`, `Point`) — `@Entity`, `@Table` 적용, 필요 시 `BaseEntity` 상속
+- 값 객체 (예: `Email`) — `@Embeddable` 적용, 엔티티에 `@Embedded`로 포함
+- `*Service` — 도메인 서비스 (`@Service` 사용, 단일 도메인 책임)
+- `*Repository` — Repository 인터페이스 (구현 X, Spring 의존 없음)
+- `*ServiceDto` — 도메인 서비스 입출력 DTO를 담는 outer 클래스
+  - 입력 record: `*Command`
+  - 출력 record: `*Query` 또는 도메인 객체
+- 책임: 비즈니스 규칙, 불변식 검증.
+
+### `domain.shared`
+여러 도메인이 공유하는 값 객체.
+- 예: `Money` (`@Embeddable` 적용, `domain.shared` 패키지에 위치)
+
+### `infrastructure.{도메인}`
+영속성 어댑터.
+- `*RepositoryImpl` — `domain.*Repository` 구현체 (`@Repository` 사용)
+- `*JpaRepository` — Spring Data JPA 인터페이스 (도메인 엔티티 클래스 직접 사용)
+- 별도 `*Entity` 클래스 없음 — 도메인 엔티티가 JPA 엔티티를 겸함
+- 책임: DB 접근 등 기술적 세부사항.
+
+### `support.error`
+공통 예외 처리 (전 레이어 공유).
+
+## 예외 처리
+
+- 비즈니스 규칙 위반은 항상 `CoreException` 사용
+- 에러 종류는 `ErrorType` enum으로 관리 (HTTP 상태, 메시지 매핑)
+- ❌ `IllegalArgumentException`, `RuntimeException` 등 표준 예외 직접 throw 금지
+- ❌ 예외를 잡아서 무시(swallow)하는 빈 catch 블록 금지
+- 새 에러 케이스 추가 시 `ErrorType` enum에 먼저 정의
+
+```java
+// 좋은 예 — ErrorType만
+throw new CoreException(ErrorType.BAD_REQUEST, "충전 금액은 1 이상이어야 합니다. amount=" + amount);
+```
+
+## 도메인 엔티티 / 값 객체 작성 규칙
+
+- `@NoArgsConstructor(access = PROTECTED)` 필수
+- `@Setter` 금지
+
+## 트랜잭션 경계
+
+- 쓰기 `@Transactional`은 기본은 application, 단일 애그리거트 단순 작업은 domain service 허용
+- 도메인 서비스의 읽기 메서드에는 `@Transactional(readOnly = true)` 선언 가능
+- ❌ Controller에 `@Transactional` 금지
+
+
+## Lombok 사용 정책
+
+- ✅ 허용: `@Getter`, `@RequiredArgsConstructor`, `@Builder`, `@NoArgsConstructor(access = PROTECTED)`, `@EqualsAndHashCode`
+- ✅ 허용: `@AllArgsConstructor(access = PRIVATE)` — 값 객체의 private 생성자 전용
+- ❌ 금지: `@Setter`, `@Data`, `@AllArgsConstructor` (public)
+
+## 참고 구현체 (필독)
+
+새 도메인 작업 시 회원/포인트 모듈을 먼저 읽고 동일한 스타일을 따를 것.
+
+### 회원 모듈
+- `apps/commerce-api/src/main/java/com/loopers/domain/member/`
+- `apps/commerce-api/src/main/java/com/loopers/application/member/`
+- `apps/commerce-api/src/main/java/com/loopers/interfaces/api/member/`
+- `apps/commerce-api/src/main/java/com/loopers/infrastructure/member/`
+
+### 포인트 모듈
+- `apps/commerce-api/src/main/java/com/loopers/domain/point/`
+- `apps/commerce-api/src/main/java/com/loopers/application/point/`
+- `apps/commerce-api/src/main/java/com/loopers/interfaces/api/point/`
+- `apps/commerce-api/src/main/java/com/loopers/infrastructure/point/`
+
+### 공통 예외
+- `apps/commerce-api/src/main/java/com/loopers/support/error/CoreException.java`
+- `apps/commerce-api/src/main/java/com/loopers/support/error/ErrorType.java`
+
+## 도메인 명세 문서
+
+새 도메인 작업 시 해당 명세를 먼저 읽을 것:
+- 회원: `docs/도메인모델/01_member.md`
+- 포인트: `docs/도메인모델/02_point.md`
+- 브랜드: `docs/도메인모델/03_brand.md`
+- 상품: `docs/도메인모델/04_product.md`
+- 상품 좋아요: `docs/도메인모델/05_prodocut-like.md`
+- 공통 규칙: `docs/도메인모델/공통/`
+
+## 작업 흐름
+
+새 기능 추가 요청을 받으면:
+1. 해당 도메인 명세 문서를 먼저 읽음
+2. 회원/포인트 모듈에서 가장 유사한 케이스를 참고
+3. TFD 절차는 `tfd-workflow` skill을 따름
+4. 레이어별 상세 규칙은 각 레이어 skill을 따름
+   (`domain-layer`, `application-layer`, `interface-layer`, `infrastructure-layer`)

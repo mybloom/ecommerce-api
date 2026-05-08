@@ -1,5 +1,6 @@
 package com.loopers.domain.point;
 
+import com.loopers.domain.shared.Money;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.BeforeEach;

@@ -1,6 +1,7 @@
 package com.loopers.domain.point;
 
 import com.loopers.application.point.PointUseCaseDto;
+import com.loopers.domain.shared.Money;
 import lombok.NoArgsConstructor;
 
 @NoArgsConstructor(access = lombok.AccessLevel.PRIVATE)

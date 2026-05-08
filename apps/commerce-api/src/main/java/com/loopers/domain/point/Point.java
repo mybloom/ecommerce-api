@@ -1,5 +1,6 @@
 package com.loopers.domain.point;
 
+import com.loopers.domain.shared.Money;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import jakarta.persistence.*;
@@ -14,7 +15,6 @@ import static java.util.Objects.requireNonNull;
 @Table(name = "point")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Point {
-    private static final long INITIAL_POINT_AMOUNT = 0L;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -29,7 +29,7 @@ public class Point {
     public static Point createInitial(PointServiceDto.CreateInitialCommand command) {
         Point point = new Point();
 
-        point.balance = Money.of(INITIAL_POINT_AMOUNT);
+        point.balance = Money.ZERO;
         point.memberId = requireNonNull(command.memberId());
 
         return point;

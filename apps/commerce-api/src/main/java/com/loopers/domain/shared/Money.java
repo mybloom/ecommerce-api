@@ -1,4 +1,4 @@
-package com.loopers.domain.point;
+package com.loopers.domain.shared;
 
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;

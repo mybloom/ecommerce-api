@@ -8,6 +8,8 @@ import com.loopers.support.error.ErrorType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -23,6 +25,34 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 @Slf4j
 public class ApiControllerAdvice {
+
+    /**
+     * @Valid 검증 실패 시 처리
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiResponse<?>> handleValidation(MethodArgumentNotValidException e) {
+        String message = e.getBindingResult().getFieldErrors()
+                .stream()
+                .map(error -> String.format("요청 파라미터 '%s' (값: '%s')이(가) 유효하지 않습니다: %s",
+                        error.getField(),
+                        error.getRejectedValue() != null ? error.getRejectedValue().toString() : "null",
+                        error.getDefaultMessage()))
+                .collect(Collectors.joining(", "));
+
+        return failureResponse(ErrorType.BAD_REQUEST, message);
+    }
+
+    /**
+     * 필수 요청 헤더가 누락된 경우 처리
+     */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ApiResponse<?>> handleMissingHeader(MissingRequestHeaderException e) {
+        String headerName = e.getHeaderName();
+        String message = String.format("필수 요청 헤더 '%s'가 누락되었습니다.", headerName);
+
+        return failureResponse(ErrorType.BAD_REQUEST, message);
+    }
+
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handle(CoreException e) {
         log.warn("CoreException : {}", e.getCustomMessage() != null ? e.getCustomMessage() : e.getMessage(), e);

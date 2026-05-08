@@ -37,31 +37,31 @@ HTTP 진입점. Spring MVC 사용.
 - `*V1Controller` — REST 컨트롤러 (`implements *V1ApiSpec`)
 - `*V1ApiSpec` — API 명세 인터페이스 (Swagger/OpenAPI 어노테이션 분리용)
 - `*V1Dto` — 요청/응답 DTO를 담는 outer 클래스
-  - 내부 record: `*Request` (요청), `*Response` (응답)
-  - `*Request`는 `toInfo()` 메서드로 `*UseCaseDto.*Info`로 변환
-  - `*Response`는 정적 `from(*UseCaseDto.*Result)` 팩토리 메서드 보유
+    - 내부 record: `*Request` (요청), `*Response` (응답)
+    - `*Request`는 `toInfo()` 메서드로 `*UseCaseDto.*Info`로 변환
+    - `*Response`는 정적 `from(*UseCaseDto.*Result)` 팩토리 메서드 보유
 - 책임: HTTP ↔ DTO 변환만. 비즈니스 로직 금지.
 
 ### `application.{도메인}`
 유스케이스 오케스트레이션. 트랜잭션 경계.
 - `*UseCase` — 유스케이스 진입점 (`@Component` 사용)
 - `*UseCaseDto` — UseCase 입출력 DTO를 담는 outer 클래스 (도메인 객체를 외부에 직접 노출하지 않음)
-  - 입력 record: `*Info`
-  - 출력 record: `*Result`
-  - `*Info`는 `toCommand()` 메서드로 `*ServiceDto.*Command`로 변환
-  - `*Result`는 정적 `from(*ServiceDto.*Query)` 팩토리 메서드 보유
+    - 입력 record: `*Info`
+    - 출력 record: `*Result`
+    - `*Info`는 `toCommand()` 메서드로 `*ServiceDto.*Command`로 변환
+    - `*Result`는 정적 `from(*ServiceDto.*Query)` 팩토리 메서드 보유
 - 책임: 트랜잭션 관리(`@Transactional`), 도메인 객체 조합, 외부 시스템 호출 조정.
 - 비즈니스 규칙은 도메인에 위임. 여기서는 "흐름"만.
 
 ### `domain.{도메인}`
 비즈니스 로직 + JPA 영속성.
-- 도메인 엔티티 (예: `Member`, `Point`) — `@Entity`, `@Table` 적용, 필요 시 `BaseEntity` 상속
+- 도메인 엔티티 (예: `Member`, `Point`) — `@Entity`, `@Table` 적용, `BaseEntity` 상속 필수
 - 값 객체 (예: `Email`) — `@Embeddable` 적용, 엔티티에 `@Embedded`로 포함
 - `*Service` — 도메인 서비스 (`@Service` 사용, 단일 도메인 책임)
 - `*Repository` — Repository 인터페이스 (구현 X, Spring 의존 없음)
 - `*ServiceDto` — 도메인 서비스 입출력 DTO를 담는 outer 클래스
-  - 입력 record: `*Command`
-  - 출력 record: `*Query` 또는 도메인 객체
+    - 입력 record: `*Command`
+    - 출력 record: 도메인 객체 (기본), 단 Money 관련 응답 시 `*Query`
 - 책임: 비즈니스 규칙, 불변식 검증.
 
 ### `domain.shared`
@@ -95,6 +95,31 @@ throw new CoreException(ErrorType.BAD_REQUEST, "충전 금액은 1 이상이어�
 
 - `@NoArgsConstructor(access = PROTECTED)` 필수
 - `@Setter` 금지
+- enum 속성으로 의미를 명시한다
+
+```java
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+
+@Getter
+@RequiredArgsConstructor
+public enum BrandStatus {
+    ACTIVE("Active", "활성", "정상적으로 노출되는 상태"),
+    INACTIVE("Inactive", "비활성", "일시적으로 노출이 중단된 상태"),
+    WITHDRAWN("Withdrawn", "탈퇴", "영구적으로 종료되어 더 이상 사용되지 않는 상태");
+
+    private final String code;
+    private final String label;
+    private final String description;
+}
+```
+
+## Service 반환 타입 규칙
+
+- **기본**: 도메인 객체를 직접 반환 (예: `Brand`, `Member`)
+- **예외**: Money 관련 응답처럼 **계산 결과/집계값**을 담아야 할 때만
+  `*ServiceDto.Query` 사용 (예: `Point` 잔액 조회 결과)
+
 
 ## 트랜잭션 경계
 
@@ -108,6 +133,55 @@ throw new CoreException(ErrorType.BAD_REQUEST, "충전 금액은 1 이상이어�
 - ✅ 허용: `@Getter`, `@RequiredArgsConstructor`, `@Builder`, `@NoArgsConstructor(access = PROTECTED)`, `@EqualsAndHashCode`
 - ✅ 허용: `@AllArgsConstructor(access = PRIVATE)` — 값 객체의 private 생성자 전용
 - ❌ 금지: `@Setter`, `@Data`, `@AllArgsConstructor` (public)
+
+## 테스트 코드 컨벤션
+
+### 의존성 주입
+- 테스트 클래스도 **생성자 주입** 사용 (필드 주입 X, `@Autowired` 필드 X)
+
+```java
+private final MemberUseCase memberUseCase;
+private final MemberRepository memberRepository;
+private final PointRepository pointRepository;
+private final DatabaseCleanUp databaseCleanUp;
+
+@Autowired
+public MemberUseCaseTest(
+        MemberUseCase memberUseCase,
+        MemberRepository memberRepository,
+        PointRepository pointRepository,
+        DatabaseCleanUp databaseCleanUp
+) {
+    this.memberUseCase = memberUseCase;
+    this.memberRepository = memberRepository;
+    this.pointRepository = pointRepository;
+    this.databaseCleanUp = databaseCleanUp;
+}
+```
+
+### Fixture 작성 규칙
+- 도메인 객체의 **정적 팩토리 메서드를 우선 사용**
+  (예: `Brand.create(...)`, `Member.register(...)`)
+- 테스트 전용 fixture가 필요하면 메서드 이름 규칙을 aSaved* 로 prefix 사용
+  (예: `MemberFixture.aSavedMember()`)
+- **Reflection은 JPA가 강제로 채우는 필드(id, createdAt 등) 한정**
+    - `ReflectionTestUtils.setField()` 사용
+    - 그 외 필드는 정적 팩토리/빌더로 정상 경로 사용
+
+### 테스트 메서드 구조
+- given/when/then을 **빈 줄로 구분** (주석 사용 X)
+
+```java
+@Test
+void 브랜드를_조회하면_브랜드_정보를_반환한다() {
+    Brand brand = BrandFixture.aValidBrand();
+    brandRepository.save(brand);
+
+    Brand found = brandService.getBrand(brand.getId());
+
+    assertThat(found.getName()).isEqualTo(brand.getName());
+}
+```
 
 ## 참고 구현체 (필독)
 

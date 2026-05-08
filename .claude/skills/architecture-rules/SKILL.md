@@ -171,8 +171,8 @@ public MemberUseCaseTest(
 ### 테스트 메서드 구조
 - given/when/then을 **빈 줄로 구분** (주석 사용 X)
 - 한 테스트는 한 동작(when)만 검증
-- **하나의 동작에 대한 다수 검증은 `assertAll`로 묶는다** — 첫 실패에서 멈추지 않고 모든 검증 결과를 보기 위함
-- 단언이 1개뿐일 때는 `assertAll` 없이 단독 사용 가능
+- 단언이 **2개 이상이면 반드시 `assertAll`로 묶는다** (예외 없음)
+- 단언이 1개일 때만 단독 `assertThat` 사용 가능
 
 ```java
 @Test
@@ -189,6 +189,60 @@ void 브랜드를_조회하면_브랜드_정보를_반환한다() {
     );
 }
 ```
+- **given의 모든 데이터는 변수로 추출한다.** when/then 안에 리터럴 값을
+  직접 박지 않는다. 변수명이 곧 테스트 의도를 설명해야 한다.
+- **변수명이 곧 테스트 의도를 설명해야 한다.** when/then 안에 의미 불명의
+    리터럴을 직접 박지 않고, 의도가 드러나는 이름의 변수로 추출한다.
+
+❌ **잘못된 예** — given이 when 안에 박혀있음:
+
+```java
+@Test
+void 존재하지_않는_상품_조회_시_NOT_FOUND_예외가_발생한다() {
+    assertThatThrownBy(() -> productUseCase.getProduct(
+            new ProductUseCaseDto.GetProductInfo(Long.MAX_VALUE)))   // ← 의미 불명
+            .isInstanceOfSatisfying(CoreException.class, e ->
+                    assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
+}
+
+@Test
+void productId가_숫자가_아니면_400_Bad_Request를_반환한다() throws Exception {
+    mockMvc.perform(get("/api/v1/products/string"))   // ← "string"이 뭘 뜻하는지 불명
+            .andExpect(status().isBadRequest());
+}
+```
+
+✅ **올바른 예** — given을 변수로 추출, when/then과 빈 줄로 분리:
+
+```java
+@Test
+void 존재하지_않는_상품_조회_시_NOT_FOUND_예외가_발생한다() {
+    long nonExistentProductId = Long.MAX_VALUE;
+    ProductUseCaseDto.GetProductInfo info = 
+        new ProductUseCaseDto.GetProductInfo(nonExistentProductId);
+
+    assertThatThrownBy(() -> productUseCase.getProduct(info))
+            .isInstanceOfSatisfying(CoreException.class, e ->
+                    assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
+}
+
+@Test
+void productId가_숫자가_아니면_400_Bad_Request를_반환한다() throws Exception {
+    String invalidProductId = "string";
+
+    mockMvc.perform(get("/api/v1/products/" + invalidProductId))
+            .andExpect(status().isBadRequest());
+}
+```
+
+### Repository 테스트 작성 기준
+
+- ❌ **테스트 작성 금지**: Spring Data JPA가 메서드명으로 자동 생성하는 쿼리
+  (예: `findById`, `findByBrandId`, `existsByEmail`, `deleteByName` 등)
+- ✅ **테스트 작성 필수**: `@Query`, QueryDSL, 네이티브 쿼리, 복잡한 조건/조인,
+  벌크 연산
+- 판단 기준: "이 메서드의 쿼리 동작이 메서드명만 보고 명확한가?"
+  → 명확하면 Spring Data JPA 신뢰, 모호하면 검증
 
 ## 참고 구현체 (필독)
 

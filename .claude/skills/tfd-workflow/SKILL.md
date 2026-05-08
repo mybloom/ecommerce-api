@@ -98,10 +98,9 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 → `infrastructure-layer` skill의 상세 규칙을 따름.
 
 ### Repository 테스트 작성 기준
-- **테스트 작성 X**: Spring Data JPA가 자동 생성하는 메서드 쿼리만 사용하는 경우
-  (예: `findById`, `findByBrandId` 등 메서드명 규칙으로 만든 쿼리)
-- **테스트 작성 O**: `@Query` 사용, QueryDSL, 복잡한 조건/조인,
-  네이티브 쿼리 등 검증 가치가 있는 경우
+### Repository 테스트 작성 기준
+- 테스트 작성 X: Spring Data JPA가 자동 생성하는 메서드 쿼리만 사용하는 경우
+- 테스트 작성 O: @Query, QueryDSL, 복잡한 조건/조인, 네이티브 쿼리 등
 - 테스트 어노테이션은 `@DataJpaTest` 사용 (`@SpringBootTest` 금지)
 
 ### 진행 순서

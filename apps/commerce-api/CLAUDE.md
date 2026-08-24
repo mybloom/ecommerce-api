@@ -2,12 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+It covers **how to run things** and **how the repo is laid out**. Coding rules and the development
+process live in skills — see below. Keep it that way so the two don't drift apart.
+
+## Rules and workflow live in skills
+
+| Where | What |
+|---|---|
+| `.claude/skills/architecture-rules/` | Layer dependencies, package naming, DTO conversion chain, exception handling (`CoreException` / `ErrorType`), Lombok policy, test conventions, reference implementations |
+| `.claude/skills/tfd-workflow/` | How to add a feature: one layer at a time, test first, stop for review between layers |
+| `docs/도메인모델/` | Domain specs. Read the relevant one **before** starting work on a domain |
+
 ## Commands
 
 All commands are run from the **repo root** (`commece-api-2604/`), not from `apps/commerce-api/`.
 
 ```bash
-# Start required infrastructure (MySQL, Redis) before running the app or tests
+# Start required infrastructure (MySQL, Redis) before running the app
 docker-compose -f ./docker/infra-compose.yml up -d
 
 # Build the entire project
@@ -26,89 +37,42 @@ docker-compose -f ./docker/infra-compose.yml up -d
 ./gradlew :apps:commerce-api:bootRun
 ```
 
-Tests run with `spring.profiles.active=test` and `user.timezone=Asia/Seoul` automatically (configured in root `build.gradle.kts`). `maxParallelForks = 1` so tests are sequential.
-
 Swagger UI is available at `http://localhost:8080/swagger-ui.html` when running locally.
 
-## Architecture
+## Project structure
 
-This is a **multi-module Gradle project**. Module hierarchy:
+This is a **multi-module Gradle project**.
 
 - `apps/` — runnable Spring Boot applications (`commerce-api`, `commerce-batch`, `commerce-streamer`)
 - `modules/` — reusable infrastructure configs (`jpa`, `redis`, `kafka`)
 - `supports/` — add-on modules (`jackson`, `logging`, `monitoring`)
 
-`apps` depend on `modules` and `supports`. `modules` and `supports` are not runnable (their `BootJar` tasks are disabled).
+`apps` depend on `modules` and `supports`. `modules` and `supports` are not runnable (their `BootJar`
+tasks are disabled). Main development happens in `apps/commerce-api`.
 
-### Package layers inside `commerce-api`
+Package layout inside `commerce-api` and the rules that govern it are in the `architecture-rules` skill.
 
-```
-com.loopers
-├── interfaces.api.*        # Controllers (HTTP layer)
-├── application.*           # UseCases (orchestration + transaction boundary)
-├── domain.*                # Domain objects, Services, Repository interfaces
-├── infrastructure.*        # JPA repository implementations
-└── support.error           # CoreException, ErrorType
-```
+## Test setup
 
-Data flows inward and upward: `interfaces → application → domain ← infrastructure`.
+Tests run with `spring.profiles.active=test` and `user.timezone=Asia/Seoul` automatically (configured
+in root `build.gradle.kts`). `maxParallelForks = 1`, so tests are sequential.
 
-### Request flow
+MySQL and Redis are started by **Testcontainers** (`MySqlTestContainersConfig`, `RedisTestContainersConfig`
+in the `testFixtures` source set of `modules/jpa` and `modules/redis`). Only the Docker daemon needs to be
+running — `docker-compose` is not required for tests.
 
-```
-Request DTO → toInfo() → UseCaseDto.Info
-  → UseCase.method() → ServiceDto.Command
-  → DomainService.method() → domain object / ServiceDto.Query
-  → UseCaseDto.Result.from()
-  → Response DTO.from()
-  → ApiResponse.success(...)
-```
+Which annotation belongs to which kind of test:
 
-Each layer has its own DTO container class (`XxxV1Dto`, `XxxUseCaseDto`, `XxxServiceDto`), all defined as inner `record`s inside a single outer class. Conversion is always done via `toInfo()` / `toCommand()` instance methods going down and `from()` static factories going up.
+| Test class type | Annotation |
+|---|---|
+| Domain object tests | plain JUnit (no Spring) |
+| Domain service tests | `@ExtendWith(MockitoExtension.class)` |
+| UseCase tests | `@SpringBootTest` |
+| Controller slice tests | `@WebMvcTest` |
+| E2E tests | `@SpringBootTest(webEnvironment = RANDOM_PORT)` |
 
-### Key conventions
+Every integration/E2E test calls `databaseCleanUp.truncateAllTables()` in `@AfterEach`. `DatabaseCleanUp`
+is a test fixture provided by `modules/jpa`, importable via `testFixtures(project(":modules:jpa"))`.
 
-**Domain objects** (`domain.*`)
-- Entities use protected no-arg constructor + static factory (`create`, `createInitial`)
-- VOs are immutable with `@EqualsAndHashCode`; all validation happens in the `of()` factory; arithmetic uses `Math.addExact`/`Math.subtractExact`
-- Domain method contract: validate all inputs first, then mutate state (no partial state)
-- Commands are `void`; queries use getters (CQS inside domain objects)
-- No Spring annotations inside `domain.*` (JPA mapping annotations are allowed)
-- `BAD_REQUEST` = the input value itself is invalid; `CONFLICT` = input is valid but conflicts with current state
-
-**Domain services** (`domain.*.XxxService`, `@Service`)
-- Trust domain objects; don't re-validate rules the domain already enforces
-- Never catch domain exceptions and re-throw as a different `ErrorType`
-- Input is always a `Command`; output is either the domain object directly or a `Query` record
-
-**UseCases** (`application.*.XxxUseCase`, `@Component`)
-- Owns the `@Transactional` boundary (use `org.springframework.transaction.annotation.Transactional`)
-- Combines multiple domain services; validates cross-domain existence (e.g., member must exist before charging points)
-- Never expose domain DTOs or entities past the UseCase boundary
-
-**Controllers** (`interfaces.api.*.XxxV1Controller`)
-- Split into `XxxV1ApiSpec` (interface, holds all Swagger annotations) and `XxxV1Controller` (implementation)
-- Always pair `@RequestBody` with `@Valid`
-- User identity is passed via `X-MEMBER-ID` header (`@RequestHeader(name = "X-MEMBER-ID", required = true)`)
-- No try-catch; all exception handling is in `ApiControllerAdvice`
-- All responses are wrapped in `ApiResponse<T>`; failure responses are built exclusively by `ApiControllerAdvice`
-
-**Dependency injection**: always constructor injection with `@RequiredArgsConstructor` and `final` fields. Never `@Autowired` field injection.
-
-### Testing strategy
-
-| Test class type | Annotation | Purpose |
-|---|---|---|
-| Domain object tests | plain JUnit (no Spring) | Unit-test entity/VO behaviour |
-| Domain service tests | `@ExtendWith(MockitoExtension.class)` | Mockito mocks for repos; manual constructor injection (never `@InjectMocks`) |
-| UseCase tests | `@SpringBootTest` | Full Spring context + real DB via Testcontainers; `@MockitoSpyBean` to force partial failure for rollback tests |
-| Controller slice tests | `@WebMvcTest` | Validates HTTP contract (`@Valid`, header, routing); UseCase is `@MockitoBean` |
-| E2E tests | `@SpringBootTest(RANDOM_PORT)` | Full stack with `TestRestTemplate`; direct repo setup in `@BeforeEach` |
-
-Every integration/E2E test calls `databaseCleanUp.truncateAllTables()` in `@AfterEach`. `DatabaseCleanUp` is a test-fixture class provided by `modules/jpa`.
-
-Fixture classes are named `XxxFixture`, use `a-`/`an-` prefixed factory methods (e.g., `aPointWithBalance(1000L)`), and live either in `src/test` of the app or in the `testFixtures` source set of a module (importable via `testFixtures(project(":modules:jpa"))`).
-
-Exception assertions always verify `ErrorType` (enum, compile-safe), not message substrings.
-
-Use `when().thenReturn()` (classic Mockito) throughout; do not mix BDD `given().willReturn()` style.
+Fixture naming, assertion style, dependency injection in tests, and when a repository deserves a test
+at all are covered in the `architecture-rules` skill.

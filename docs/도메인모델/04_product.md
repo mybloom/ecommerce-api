@@ -51,6 +51,31 @@
 - 정렬 결과 안정성을 위해 2차 정렬 키로 `productId` 사용
     - 예: `likeDesc` → `ORDER BY likeCount DESC, productId DESC`
 
+### UC-2. 상품 단건 조회
+
+**목적**  
+사용자가 상품 카드를 눌러 해당 상품의 상세 정보를 확인한다.
+
+**입력**
+
+- `productId` : ProductId — 조회할 상품 식별자
+
+**출력**
+
+상품 상세 정보:
+- 상품 ID, 상품명, 상세 설명, 대표 이미지
+- 브랜드 ID, 브랜드명
+- 가격, 품절 여부, 좋아요 수
+- 판매 상태, 개시 일시
+
+**필터 정책**
+- `status == ON_SALE`인 상품만 조회 가능. `OFF_SALE`, `HIDDEN`은 "찾을 수 없음"(404) 응답
+- 소속 브랜드가 `ACTIVE`가 아니면 "찾을 수 없음"(404) 응답 (참고: brand.md Brand-001)
+    - 현재 구현에서는 브랜드 조회 단계에서 발생함
+
+**미결 사항**
+- 로그인 사용자 한정 "내가 좋아요 눌렀는지"는 아직 응답에 포함되지 않음 (ProductLike 미개발, 참고: C.3)
+
 ### 도메인 이벤트
 
 > 현재 단계에서는 이벤트 도입 보류. 향후 필요 시점에 추가.
@@ -92,6 +117,9 @@
 
 - `increaseLikeCount()` : 좋아요 수를 1 증가시킨다 (ProductLike 추가 시 호출, 참고: Product-003)
 - `decreaseLikeCount()` : 좋아요 수를 1 감소시킨다 (ProductLike 삭제 시 호출, 참고: Product-003)
+- `putOffSale()` : 판매 상태를 `OFF_SALE`로 변경한다
+- `hide()` : 판매 상태를 `HIDDEN`으로 변경한다
+- `isVisibleToUser()` : Boolean — `ProductStatus.isVisibleToUser()`에 위임한다
 
 > 그 외 행위(상품 등록, 가격 변경, 판매 상태 변경 등)는 해당 유스케이스가 정의될 때 함께 추가한다.
 
@@ -171,3 +199,49 @@
 - [ ] 좋아요 카운트 비동기 업데이트 (관련: Product-003)
 - [ ] 재고를 별도 애그리거트(Inventory)로 분리
 - [ ] 도메인 이벤트 도입 (`ProductRegistered`, `ProductSoldOut` 등)
+
+### C.3. 구현 현황 (문서 대비 갭)
+
+> 문서와 실제 코드를 대조한 스냅샷. 구현이 진행되면 갱신한다.
+
+> **기준일**: 2026-08-24 / **기준**: `feauture03` 브랜치 (`6d492a6`)
+
+#### 구현 완료
+
+| 문서 항목 | 위치 |
+|---|---|
+| B.1 Product 엔티티 (속성 전부) | `domain/product/Product.java` |
+| `price >= 0` 불변식 | `domain/shared/Money.java#of` |
+| 파생 속성 `isSoldOut` | `Product#isSoldOut` → `StockQuantity#isSoldOut` |
+| B.2 ProductStatus + `isVisibleToUser()` | `domain/product/ProductStatus.java` |
+| B.3 StockQuantity + `value >= 0` 불변식 | `domain/product/StockQuantity.java` |
+| B.4 Brand ID 참조 (단방향) | `Product.brandId` |
+| UC-2 상품 단건 조회 | `interfaces/api/product/ProductV1Controller.java` |
+
+#### 미구현
+
+| 문서 항목 | 비고 |
+|---|---|
+| UC-1 상품 목록 조회 (엔드포인트 자체) | `ProductV1Controller`에 목록 핸들러 없음 |
+| `ProductSort` (`latest` / `priceDesc` / `likeDesc`) | 타입 미존재 |
+| 페이징 (page/size) 및 페이징 메타 | 미존재 |
+| `brandId` 단일 브랜드 필터 | 미존재 |
+| 목록에서 브랜드 `ACTIVE` 아닌 상품 제외 | 미존재 (단건 조회에서만 404로 처리됨) |
+| 2차 정렬 키 `productId` | 미존재 |
+| `Product.increaseLikeCount()` / `decreaseLikeCount()` | 미존재. ProductLike와 함께 도입 예정 (참고: Product-003) |
+| "내가 좋아요 눌렀는지" | ProductLike 애그리거트 자체가 미개발 (참고: 05_prodocut-like.md) |
+
+#### 구현 기반 상태
+
+- `ProductRepository`는 `save` / `findById` 2개뿐 — 목록 조회용 쿼리 메서드 없음 (`domain/product/ProductRepository.java`)
+- `ProductJpaRepository`는 비어 있음 — 커스텀 쿼리 없음 (`infrastructure/product/ProductJpaRepository.java`)
+- QueryDSL은 `modules/jpa`에 이미 구성되어 있어(`querydsl-jpa`, `QueryDslConfig`) 목록 조회 쿼리 작성 시 바로 사용 가능
+
+#### 문서-코드 표현 차이 (미해소)
+
+- B.1의 `representativeImage : ImageUrl`은 코드에서 `String`. `ImageUrl` 값 객체는 존재하지 않음 → C.2 보류 항목으로 취급하고 이번에는 변경하지 않음
+
+#### 다음 작업 후보 (우선순위)
+
+1. **UC-1 상품 목록 조회** — `isLiked` 제외한 형태로 먼저 구현 (brandId 필터 + 3종 정렬 + 페이징)
+2. **ProductLike 애그리거트** (참고: 05_prodocut-like.md) — 완료 후 UC-1/UC-2에 `isLiked` 필드 추가, `increaseLikeCount()` / `decreaseLikeCount()` 도입

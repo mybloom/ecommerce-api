@@ -53,6 +53,23 @@ Claude-Session: https://claude.ai/code/session_xxx
 ./gradlew :apps:commerce-api:test
 ```
 
+## 브랜치
+
+| 브랜치 | 용도 | push |
+|---|---|---|
+| `main` | 통합. **직접 커밋하지 않는다** — PR 머지로만 갱신 | — |
+| `featureN_work` | 실제 작업용. 시행착오가 그대로 쌓인다 | **하지 않는다** (로컬 전용) |
+| `featureN` | PR용. `main`에서 새로 만들어 정리된 히스토리만 담는다 | 여기서만 |
+| `claude_docs` | 문서 전용. 기능과 무관하게 누적 | |
+
+`N`은 두 자리 (`feature01`, `feature02`, ...). PR은 `featureN`에서 `main`으로 연다.
+
+**왜 `_work`와 `featureN`을 나누는가** — 작업 중에는 되돌리고 다시 고치는 커밋이 생기기 마련이다.
+그걸 그대로 PR에 올리면 리뷰어가 최종 결론에 이르기까지의 경로를 전부 읽어야 한다.
+`_work`에서는 자유롭게 작업하고, PR은 `featureN`에 다시 구성한다.
+
+`_work`는 PR 후에도 **지우지 않는다.** 되돌리거나 다시 참조할 일이 생긴다.
+
 ## 브랜치별 문서 소유
 
 | 대상 | 브랜치 | 이유 |
@@ -75,10 +92,10 @@ Claude-Session: https://claude.ai/code/session_xxx
 `main`에서 새 브랜치를 만들고 **최종 결과물을 개발 순서로 다시 커밋한다.**
 
 ```bash
-git checkout -b feature04 main
+git checkout -b featureN main
 
-# 단계별로 최종 내용을 가져와 담는다
-git checkout <작업브랜치> -- <경로들>
+# 단계별로 featureN_work의 최종 내용을 가져와 담는다
+git checkout featureN_work -- <경로들>
 ./gradlew :apps:commerce-api:test    # 커밋 전마다
 git commit -m "..."
 ```
@@ -90,13 +107,13 @@ git commit -m "..."
 
 ```bash
 # 코드가 작업 브랜치와 완전히 일치하는가 (비어 있어야 함)
-git diff <새브랜치> <작업브랜치> -- apps/*/src/
+git diff featureN featureN_work -- apps/*/src/
 
 # 의도한 파일만 들어갔는가
-git diff --name-only main <새브랜치>
+git -c core.quotepath=false diff --name-only main featureN
 ```
 
-작업 브랜치는 지우지 않고 남겨둔다. 되돌릴 필요가 생길 수 있다.
+`featureN_work`는 지우지 않고 남겨둔다.
 
 ## 하지 않는 것
 

@@ -57,4 +57,59 @@ class ProductTest {
             assertThat(product.isSoldOut()).isFalse();
         }
     }
+
+    @Nested
+    @DisplayName("increaseLikeCount")
+    class IncreaseLikeCount {
+
+        @Test
+        @DisplayName("호출하면 좋아요 수가 1 증가한다")
+        void increasesLikeCountByOne_whenCalled() {
+            Product product = ProductFixture.aProduct();
+
+            product.increaseLikeCount();
+
+            assertThat(product.getLikeCount()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("여러 번 호출하면 호출 횟수만큼 누적된다")
+        void accumulatesLikeCount_whenCalledMultipleTimes() {
+            Product product = ProductFixture.aProduct();
+            int callCount = 3;
+
+            for (int i = 0; i < callCount; i++) {
+                product.increaseLikeCount();
+            }
+
+            assertThat(product.getLikeCount()).isEqualTo(callCount);
+        }
+    }
+
+    @Nested
+    @DisplayName("decreaseLikeCount")
+    class DecreaseLikeCount {
+
+        @Test
+        @DisplayName("호출하면 좋아요 수가 1 감소한다")
+        void decreasesLikeCountByOne_whenCalled() {
+            int initialLikeCount = 5;
+            Product product = ProductFixture.aProductForBrandWithLikeCount(
+                    ProductFixture.DEFAULT_BRAND_ID, initialLikeCount);
+
+            product.decreaseLikeCount();
+
+            assertThat(product.getLikeCount()).isEqualTo(initialLikeCount - 1);
+        }
+
+        @Test
+        @DisplayName("좋아요 수가 0이면 감소시키지 않는다")
+        void keepsZero_whenLikeCountIsAlreadyZero() {
+            Product product = ProductFixture.aProduct();
+
+            product.decreaseLikeCount();
+
+            assertThat(product.getLikeCount()).isEqualTo(0);
+        }
+    }
 }

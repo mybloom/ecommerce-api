@@ -27,6 +27,8 @@ interfaces.api  →  application  →  domain  ←  infrastructure
 - ❌ `domain`이 `application` 또는 `interfaces` 레이어를 import
 - ❌ `interfaces.api`가 `domain`을 직접 호출 (반드시 `application` 경유)
 - ❌ `infrastructure`가 `application`이나 `interfaces`를 import
+- ❌ 도메인 서비스가 **다른 도메인의 Repository**를 주입
+- ❌ 도메인 서비스가 **다른 도메인의 Service**를 주입 (도메인 서비스 간 호출 금지)
 
 위반 발견 시 작업을 중단하고 사용자에게 보고할 것.
 
@@ -51,6 +53,12 @@ HTTP 진입점. Spring MVC 사용.
     - `*Info`는 `toCommand()` 메서드로 `*ServiceDto.*Command`로 변환
     - `*Result`는 정적 `from(*ServiceDto.*Query)` 팩토리 메서드 보유
 - 책임: 트랜잭션 관리(`@Transactional`), 도메인 객체 조합, 외부 시스템 호출 조정.
+- **여러 도메인 서비스의 오케스트레이션은 오직 여기서만 한다.** 도메인 서비스끼리 직접 호출하지 않는다.
+- `*Processor` — 트랜잭션 경계가 UseCase와 갈라져야 할 때만 두는 보조 컴포넌트 (`@Component` + `@Transactional`)
+    - 트랜잭션 안에서 잡을 수 없는 예외(예: DB 제약 위반)를 UseCase가 트랜잭션 **밖**에서 변환해야 할 때 사용
+    - `*UseCase`는 트랜잭션 없이 `*Processor`를 감싸 예외를 변환하고, `*Processor`가 도메인 서비스를 조합
+    - 그런 이유가 없으면 만들지 않는다. `*UseCase`에 `@Transactional`을 붙이는 것이 기본
+    - 예: `application/productlike/ProductLikeProcessor.java`
 - 비즈니스 규칙은 도메인에 위임. 여기서는 "흐름"만.
 
 ### `domain.{도메인}`
@@ -58,6 +66,9 @@ HTTP 진입점. Spring MVC 사용.
 - 도메인 엔티티 (예: `Member`, `Point`) — `@Entity`, `@Table` 적용, `BaseEntity` 상속 필수
 - 값 객체 (예: `Email`) — `@Embeddable` 적용, 엔티티에 `@Embedded`로 포함
 - `*Service` — 도메인 서비스 (`@Service` 사용, 단일 도메인 책임)
+    - **자기 도메인의 Repository만 주입받는다.** 다른 도메인의 Repository도, 다른 도메인의 Service도 주입하지 않는다
+    - 여러 도메인을 엮는 흐름은 **`application`의 UseCase만** 오케스트레이션한다
+    - 즉 도메인 서비스는 서로를 모른다. 협력이 필요하면 UseCase가 각각을 호출해 조합한다
 - `*Repository` — Repository 인터페이스 (구현 X, Spring 의존 없음)
 - `*ServiceDto` — 도메인 서비스 입출력 DTO를 담는 outer 클래스
     - 입력 record: `*Command`

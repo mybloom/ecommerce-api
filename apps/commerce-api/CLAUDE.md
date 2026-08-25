@@ -11,6 +11,7 @@ skill에 따로 있다(아래 참조). 같은 내용이 두 곳에 있으면 서
 |---|---|
 | `.claude/skills/architecture-rules/` | 레이어 의존성, 패키지 네이밍, DTO 변환 체인, 예외 처리(`CoreException` / `ErrorType`), Lombok 정책, 테스트 컨벤션, 참고 구현체 |
 | `.claude/skills/tfd-workflow/` | 새 기능 추가 절차 — 한 번에 한 레이어씩, 테스트 먼저, 레이어마다 멈춰서 확인 |
+| `.claude/skills/git-conventions/` | 커밋 메시지 형식, 커밋 분리 기준, 브랜치별 문서 소유, PR 히스토리 구성 |
 | `docs/도메인모델/` | 도메인 명세. 해당 도메인 작업을 **시작하기 전에** 먼저 읽는다 |
 
 ## 명령어

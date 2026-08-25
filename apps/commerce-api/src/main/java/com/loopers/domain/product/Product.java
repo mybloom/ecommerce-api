@@ -67,6 +67,16 @@ public class Product extends BaseEntity {
         return product;
     }
 
+    public void increaseLikeCount() {
+        this.likeCount++;
+    }
+
+    public void decreaseLikeCount() {
+        if (this.likeCount > 0) {
+            this.likeCount--;
+        }
+    }
+
     public void putOffSale() {
         this.status = ProductStatus.OFF_SALE;
     }

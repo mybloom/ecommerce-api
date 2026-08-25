@@ -7,11 +7,11 @@ import java.time.ZonedDateTime;
 
 public class ProductFixture {
 
-    public static final Long DEFAULT_PRODUCT_ID = 1L;
+    public static final Long DEFAULT_PRODUCT_ID = 33L;
     public static final String DEFAULT_NAME = "Nike Air Max";
     public static final String DEFAULT_DESCRIPTION = "경량 러닝화";
     public static final String DEFAULT_IMAGE = "https://example.com/image.jpg";
-    public static final Long DEFAULT_BRAND_ID = 1L;
+    public static final Long DEFAULT_BRAND_ID = 44L;
     public static final Money DEFAULT_PRICE = Money.of(100_000L);
     public static final StockQuantity DEFAULT_STOCK = StockQuantity.of(10);
     public static final ZonedDateTime DEFAULT_OPENED_AT = ZonedDateTime.now();
@@ -51,6 +51,15 @@ public class ProductFixture {
     public static Product aProductForBrand(Long brandId) {
         return Product.create(DEFAULT_NAME, DEFAULT_DESCRIPTION, DEFAULT_IMAGE,
                 brandId, DEFAULT_PRICE, DEFAULT_STOCK, DEFAULT_OPENED_AT);
+    }
+
+    public static Product aProductForBrandWithLikeCount(Long brandId, int likeCount) {
+        Product product = aProductForBrand(brandId);
+
+        for (int i = 0; i < likeCount; i++) {
+            product.increaseLikeCount();
+        }
+        return product;
     }
 
     public static Product aProductForBrandWithStatus(Long brandId, ProductStatus status) {

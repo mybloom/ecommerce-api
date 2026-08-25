@@ -60,18 +60,44 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 
 → `domain-layer` skill의 상세 규칙을 따름. 여기서는 큰 흐름만.
 
-### 진행 순서
+**엔티티/값객체를 먼저 끝내고, 그 다음에 도메인 서비스를 만든다. 둘을 한 번에 작성하지 않는다.**
+한 번에 리뷰할 변경량을 줄이기 위해서다.
+
+### 1-A. 엔티티 / 값객체
+
 1. **도메인 객체 테스트 작성** (`*Test.java`)
     - 생성/팩토리 메서드의 불변식 검증
     - 비즈니스 규칙 위반 시나리오
     - 상태 전이 메서드 (`cancel()`, `activate()` 등)
 2. **테스트 컴파일되도록 도메인 객체 최소 구현**
-3. **테스트 통과 확인** (`./gradlew :commerce-api:test --tests *도메인명*`)
-4. **도메인 서비스 필요하면 동일 사이클 반복**
-5. **Repository 인터페이스 정의** (구현 X, 메서드 시그니처만)
+3. **테스트 통과 확인** (`./gradlew :apps:commerce-api:test --tests *도메인명*`)
+
+#### 1-A 종료 멘트 (그대로 사용)
+```
+✅ 엔티티 완료
+
+작성된 것:
+- {도메인 객체}: src/.../domain/{도메인}/{Class}.java
+- {도메인 객체} 테스트: src/test/.../domain/{도메인}/{Class}Test.java
+
+다음으로 도메인 서비스를 진행할까요?
+엔티티가 잘못된 부분이 있으면 먼저 수정 요청해주세요.
+```
+
+여기서 **반드시 멈추고** 사용자 응답 대기. 도메인 서비스 코드를 미리 작성하지 않는다.
+
+### 1-B. 도메인 서비스 + Repository 인터페이스
+
+> 도메인 서비스가 필요 없는 도메인이면 4~6을 건너뛰고 7만 수행한다.
+
+4. **도메인 서비스 테스트 작성** (Repository는 mock)
+5. **테스트 컴파일되도록 도메인 서비스 최소 구현**
+6. **테스트 통과 확인**
+7. **Repository 인터페이스 정의** (구현 X, 메서드 시그니처만)
 
 ### 완료 조건
 - [ ] 도메인 객체 단위 테스트 모두 통과
+- [ ] 엔티티 완료 시점(1-A)에 사용자 확인을 받았음
 - [ ] 도메인 서비스가 있다면 단위 테스트 통과 (Repository는 mock)
 - [ ] Repository 인터페이스 정의됨
 - [ ] `architecture-rules`의 도메인 레이어 규칙 위반 없음
@@ -137,10 +163,12 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 → `application-layer` skill의 상세 규칙을 따름.
 
 ### 진행 순서
-1. **UseCase 단위 테스트 작성** (Repository, 도메인 서비스 mock)
+1. **UseCase 통합 테스트 작성** (`@SpringBootTest` + 실제 빈/DB)
     - 정상 흐름 (happy path)
     - 비즈니스 예외 시나리오 (`CoreException`)
     - 트랜잭션 롤백 케이스 (필요 시)
+    - 의존성을 전부 mock하면 "내가 짠 호출 순서를 내가 검증하는" 테스트가 된다.
+      실제 빈으로 엮고, 통제 불가능한 외부 의존성만 `@MockitoSpyBean`으로 대체한다.
 2. **`*UseCaseDto.Info` / `*UseCaseDto.Result` record 정의**
     - `Info.toCommand()` 메서드
     - `Result.from(Query)` 정적 팩토리
@@ -148,7 +176,7 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 4. **테스트 통과 확인**
 
 ### 완료 조건
-- [ ] UseCase 단위 테스트 통과
+- [ ] UseCase 통합 테스트 통과
 - [ ] DTO 변환 체인 준수 (Info → Command, Query → Result)
 - [ ] 트랜잭션 경계 명시 (`@Transactional`)
 - [ ] 비즈니스 로직은 도메인에 위임 (UseCase는 흐름만)
@@ -160,7 +188,7 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 작성된 것:
 - UseCase: ...
 - UseCaseDto (Info, Result): ...
-- UseCase 단위 테스트: ...
+- UseCase 통합 테스트: ...
 
 다음으로 Interface Layer를 진행할까요?
 ```
@@ -199,7 +227,7 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 - V1Controller, V1ApiSpec, V1Dto: ...
 - E2E 테스트: ...
 
-전체 테스트 실행: ./gradlew :commerce-api:test
+전체 테스트 실행: ./gradlew :apps:commerce-api:test
 ```
 
 ---
@@ -235,6 +263,7 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 
 - [ ] 테스트 먼저 썼는가? (테스트 없이 구현부터 작성 X)
 - [ ] 한 레이어만 건드렸는가? (다음 레이어 코드까지 미리 작성 X)
+- [ ] 엔티티와 도메인 서비스를 한 번에 작성하지 않았는가?
 - [ ] 최소한만 구현했는가? (요구되지 않은 메서드/필드 추가 X)
 - [ ] 참고 모듈(Member/Point) 스타일과 일치하는가?
 - [ ] DTO 변환 체인 준수했는가?

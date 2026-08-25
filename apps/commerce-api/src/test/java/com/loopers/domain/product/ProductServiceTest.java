@@ -84,4 +84,66 @@ class ProductServiceTest {
             assertThat(exception.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
         }
     }
+
+    @Nested
+    @DisplayName("increaseLikeCount")
+    class IncreaseLikeCount {
+
+        @Test
+        @DisplayName("상품의 좋아요 수를 1 증가시킨다")
+        void increasesLikeCount_whenProductExists() {
+            Long productId = ProductFixture.DEFAULT_PRODUCT_ID;
+            int initialLikeCount = 5;
+            Product product = ProductFixture.aProductForBrandWithLikeCount(
+                    ProductFixture.DEFAULT_BRAND_ID, initialLikeCount);
+            when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+
+            productService.increaseLikeCount(new ProductServiceDto.LikeCountCommand(productId));
+
+            assertThat(product.getLikeCount()).isEqualTo(initialLikeCount + 1);
+        }
+
+        @Test
+        @DisplayName("상품이 존재하지 않으면 NOT_FOUND 예외가 발생한다")
+        void throwsNotFound_whenProductDoesNotExist() {
+            Long nonExistentProductId = Long.MAX_VALUE;
+            when(productRepository.findById(nonExistentProductId)).thenReturn(Optional.empty());
+
+            CoreException exception = assertThrows(CoreException.class, () ->
+                    productService.increaseLikeCount(new ProductServiceDto.LikeCountCommand(nonExistentProductId)));
+
+            assertThat(exception.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+    }
+
+    @Nested
+    @DisplayName("decreaseLikeCount")
+    class DecreaseLikeCount {
+
+        @Test
+        @DisplayName("상품의 좋아요 수를 1 감소시킨다")
+        void decreasesLikeCount_whenProductExists() {
+            Long productId = ProductFixture.DEFAULT_PRODUCT_ID;
+            int initialLikeCount = 5;
+            Product product = ProductFixture.aProductForBrandWithLikeCount(
+                    ProductFixture.DEFAULT_BRAND_ID, initialLikeCount);
+            when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+
+            productService.decreaseLikeCount(new ProductServiceDto.LikeCountCommand(productId));
+
+            assertThat(product.getLikeCount()).isEqualTo(initialLikeCount - 1);
+        }
+
+        @Test
+        @DisplayName("상품이 존재하지 않으면 NOT_FOUND 예외가 발생한다")
+        void throwsNotFound_whenProductDoesNotExist() {
+            Long nonExistentProductId = Long.MAX_VALUE;
+            when(productRepository.findById(nonExistentProductId)).thenReturn(Optional.empty());
+
+            CoreException exception = assertThrows(CoreException.class, () ->
+                    productService.decreaseLikeCount(new ProductServiceDto.LikeCountCommand(nonExistentProductId)));
+
+            assertThat(exception.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+    }
 }

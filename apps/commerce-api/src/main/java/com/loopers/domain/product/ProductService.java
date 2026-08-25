@@ -23,4 +23,19 @@ public class ProductService {
 
         return product;
     }
+
+    @Transactional
+    public void increaseLikeCount(ProductServiceDto.LikeCountCommand command) {
+        findExistingProduct(command.productId()).increaseLikeCount();
+    }
+
+    @Transactional
+    public void decreaseLikeCount(ProductServiceDto.LikeCountCommand command) {
+        findExistingProduct(command.productId()).decreaseLikeCount();
+    }
+
+    private Product findExistingProduct(Long productId) {
+        return productRepository.findById(productId)
+                .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다."));
+    }
 }

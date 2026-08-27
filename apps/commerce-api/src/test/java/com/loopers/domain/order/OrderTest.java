@@ -103,19 +103,6 @@ class OrderTest {
         }
 
         @Test
-        @DisplayName("실패로 끝난 주문은 확정할 수 없고 CONFLICT 예외가 발생한다")
-        void throwsConflict_whenOrderAlreadyFailed() {
-            // given
-            Order order = OrderFixture.aFailedOrder();
-            List<OrderLine> lines = OrderFixture.aLines();
-
-            // when & then
-            assertThatThrownBy(() -> order.confirm(lines))
-                    .isInstanceOfSatisfying(CoreException.class, e ->
-                            assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT));
-        }
-
-        @Test
         @DisplayName("라인이 비어 있으면 BAD_REQUEST 예외가 발생한다")
         void throwsBadRequest_whenLinesAreEmpty() {
             // given

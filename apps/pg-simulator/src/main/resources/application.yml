@@ -1,0 +1,82 @@
+server:
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 200 # 최대 워커 스레드 수 (default : 200)
+      min-spare: 10 # 최소 유지 스레드 수 (default : 10)
+    connection-timeout: 1m # 연결 타임아웃 (ms) (default : 60000ms = 1m)
+    max-connections: 8192 # 최대 동시 연결 수 (default : 8192)
+    accept-count: 100 # 대기 큐 크기 (default : 100)
+    keep-alive-timeout: 60s # 60s
+  max-http-request-header-size: 8KB
+
+spring:
+  main:
+    web-application-type: servlet
+  application:
+    name: pg-simulator
+  profiles:
+    active: local
+  config:
+    import:
+      - jpa.yml
+      - redis.yml
+      - logging.yml
+      - monitoring.yml
+
+springdoc:
+  use-fqn: true
+  swagger-ui:
+    path: /swagger-ui.html
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local, test
+
+server:
+  port: 8082
+
+management:
+  server:
+    port: 8083
+
+# 커머스와 DB를 나눈다. jpa.yml 의 local 문서가 같은 키를 loopers 로 덮으므로
+# 프로파일 없는 최상위가 아니라 이 안에 둔다 — import 한 쪽이 import 된 쪽을 이긴다.
+# 같은 DB 를 쓰면 ddl-auto: create 가 커머스 테이블까지 매번 drop/create 한다.
+datasource:
+  mysql-jpa:
+    main:
+      jdbc-url: jdbc:mysql://localhost:3306/paymentgateway
+      username: application
+      password: application
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+server:
+  port: 8082
+
+management:
+  server:
+    port: 8083
+
+---
+spring:
+  config:
+    activate:
+      on-profile: qa
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prd
+
+springdoc:
+  api-docs:
+    enabled: false

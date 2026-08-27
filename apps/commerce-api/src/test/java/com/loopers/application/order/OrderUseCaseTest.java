@@ -21,7 +21,6 @@ import com.loopers.support.fixture.MemberFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -42,12 +41,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-/**
- * 밖에서 안으로 만드는 동안 완성 목표를 고정해두는 테스트다.
- * 도메인·인프라가 스켈레톤인 지금은 통과할 수 없어 비활성 상태이며,
- * 4단계(Infrastructure)까지 끝나 스택이 이어지면 @Disabled를 뗀다.
- */
-@Disabled("4단계에서 활성화 — 도메인·인프라가 아직 스켈레톤이다")
 @SpringBootTest
 class OrderUseCaseTest {
 
@@ -298,7 +291,7 @@ class OrderUseCaseTest {
     @Nested
     @DisplayName("place - 동시 주문")
     class ConcurrentPlace {
-
+ 
         @Test
         @DisplayName("재고 1개를 두 명이 동시에 주문하면 한 건만 확정되고 재고는 음수가 되지 않는다")
         void confirmsOnlyOne_whenStockIsContended() throws InterruptedException {

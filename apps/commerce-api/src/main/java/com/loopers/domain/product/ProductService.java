@@ -30,7 +30,14 @@ public class ProductService {
      */
     @Transactional
     public Product retrieveForUpdate(ProductServiceDto.RetrieveCommand command) {
-        throw new UnsupportedOperationException("4단계에서 구현");
+        Product product = productRepository.findByIdForUpdate(command.productId())
+                .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다."));
+
+        if (!product.isVisibleToUser()) {
+            throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
+        }
+
+        return product;
     }
 
     @Transactional

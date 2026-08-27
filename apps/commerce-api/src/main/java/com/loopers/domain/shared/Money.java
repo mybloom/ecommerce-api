@@ -50,4 +50,12 @@ public class Money {
         requireNonNull(other, "뺄 금액은 필수입니다.");
         return Money.of(Math.subtractExact(this.amount, other.amount));
     }
+
+    public Money multiply(int quantity) {
+        if (quantity <= 0) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "곱할 수량은 1 이상이어야 합니다. quantity=" + quantity);
+        }
+
+        return Money.of(Math.multiplyExact(this.amount, (long) quantity));
+    }
 }

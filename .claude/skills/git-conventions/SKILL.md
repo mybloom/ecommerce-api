@@ -1,6 +1,6 @@
 ---
 name: git-conventions
-description: 커밋, 브랜치, PR 작업 시 항상 참조. 커밋 메시지 형식(제목 + 불릿), 문서와 코드를 나누는 기준, 어떤 문서가 어느 브랜치에 속하는지, PR용 히스토리 구성(featureN + claude_docs 양쪽을 한 번에)을 담음. "커밋해줘", "PR 올려줘", "브랜치 만들어줘", "히스토리 정리해줘" 같은 요청에 적용.
+description: 커밋, 브랜치, PR 작업 시 항상 참조. 커밋 메시지 형식(제목 + 불릿), 문서와 코드를 나누는 기준, 어떤 문서가 어느 브랜치에 속하는지, push/PR 규칙을 담음. "커밋해줘", "브랜치 만들어줘", "PR 올려줘" 같은 요청에 적용. 기능을 마치고 featureN을 다시 구성하는 절차는 pr-history 스킬에 있다.
 ---
 
 # Git 컨벤션
@@ -70,6 +70,9 @@ Claude-Session: https://claude.ai/code/session_xxx
 
 `_work`는 PR 후에도 **지우지 않는다.** 되돌리거나 다시 참조할 일이 생긴다.
 
+**기능이 끝나 `featureN`을 구성할 때는 `pr-history` 스킬을 따른다.** `featureN`과 `claude_docs`
+양쪽을 담고 검증하는 절차가 거기에 있다. 한쪽만 하고 멈추면 절차가 끝난 것이 아니다.
+
 ## 브랜치별 문서 소유
 
 | 대상 | 브랜치 | 이유 |
@@ -96,86 +99,6 @@ Claude-Session: https://claude.ai/code/session_xxx
 - 어차피 `featureN`은 경로를 골라 담는 방식으로 구성하므로, 분류는 그때 한 번에 처리된다
 - 스킬을 고친 즉시 그 브랜치에서 쓸 수 있다. `claude_docs`에만 커밋하면 정작 작업 중인
   브랜치의 워킹트리에는 없어서 적용되지 않는다
-
-## PR용 히스토리 구성
-
-**시행착오를 그대로 올리지 않는다.** 작업 브랜치에는 되돌린 커밋, 뒤늦게 메운 구멍,
-문서와 코드가 섞인 커밋이 남기 마련이다.
-
-**두 브랜치를 모두 담아야 끝난다.** `featureN`만 만들고 멈추지 않는다.
-`_work`에 섞여 있던 `.claude/**` 는 소유 브랜치로 옮기기 전까지 **어디에도 반영되지 않은 상태**다.
-1~3단계를 한 번에 진행하고, 중간에 끊어 "남은 일"로 넘기지 않는다.
-
-### 1단계: `featureN` 에 구현을 담는다
-
-`main`에서 새 브랜치를 만들고 **최종 결과물을 개발 순서로 다시 커밋한다.**
-
-```bash
-git checkout -b featureN main
-
-# 단계별로 featureN_work의 최종 내용을 가져와 담는다.
-# 구현 브랜치 소유 경로만 가져온다 — 아래 "브랜치별 문서 소유" 표가 정한다
-git checkout featureN_work -- apps/*/src/ docs/도메인모델/
-./gradlew :apps:commerce-api:test    # 커밋 전마다
-git commit -m "..."
-```
-
-체리픽보다 이 방식이 낫다 — 중간 상태가 아니라 최종 내용이 단계별로 나뉘어 담기므로
-각 커밋이 온전하고 테스트도 통과한다.
-
-**커밋 순서는 개발 순서가 아니라 의존 순서다.** 밖에서 안으로(outside-in) 개발했더라도
-의존 방향은 그대로 안쪽을 향하므로, 진입점부터 담으면 첫 커밋이 컴파일되지 않는다.
-
-### 2단계: `claude_docs` 에 도구·문서 변경을 담는다
-
-`_work`에 섞여 들어간 `.claude/**` 등은 `featureN`에 담지 않고 `claude_docs`로 옮긴다.
-
-```bash
-git checkout claude_docs
-git checkout featureN_work -- .claude/ apps/commerce-api/CLAUDE.md docs/참고자료/
-git commit -m "chore: [스킬] ..."
-```
-
-옮길 것이 없으면 **"없음"이라고 확인한 뒤** 넘어간다. 확인 없이 건너뛰는 것과 구분한다.
-
-```bash
-# 옮길 것이 있는지 먼저 본다 (비어 있으면 2단계는 "없음")
-git diff --name-only claude_docs featureN_work -- .claude/ apps/commerce-api/CLAUDE.md docs/참고자료/
-```
-
-### 3단계: 검증하고 `featureN` 으로 돌아온다
-
-```bash
-# 코드가 작업 브랜치와 완전히 일치하는가 (비어 있어야 함)
-git diff featureN featureN_work -- apps/*/src/
-
-# 의도한 파일만 들어갔는가
-git -c core.quotepath=false diff --name-only main featureN
-
-# claude_docs 소유 파일이 featureN 에 섞이지 않았는가 (비어 있어야 함)
-git diff --name-only main featureN -- .claude/ docs/참고자료/ apps/commerce-api/CLAUDE.md
-
-# claude_docs 가 작업 브랜치와 일치하는가 (비어 있어야 함)
-git diff --name-only claude_docs featureN_work -- .claude/
-
-git checkout featureN    # 작업 브랜치로 돌아온다. claude_docs 에 남아 있지 않도록
-```
-
-`featureN_work`는 지우지 않고 남겨둔다.
-
-### 완료 보고 (그대로 사용)
-
-**양쪽을 나란히 적는다.** 한쪽이 비면 그 자리에서 드러난다.
-
-```
-✅ PR 히스토리 구성 완료
-
-featureN:    {N}개 커밋 — {요약}
-claude_docs: {N}개 커밋 — {요약}   (또는 "옮길 파일 없음")
-
-검증: 코드 일치 ✓ / 의도한 파일만 ✓ / claude_docs 소유 파일 미혼입 ✓
-현재 브랜치: featureN
-```
 
 ## 하지 않는 것
 

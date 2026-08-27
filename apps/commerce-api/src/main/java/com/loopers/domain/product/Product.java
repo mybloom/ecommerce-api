@@ -92,4 +92,12 @@ public class Product extends BaseEntity {
     public boolean isSoldOut() {
         return stockQuantity.isSoldOut();
     }
+
+    /**
+     * 재고 부족 검사와 차감을 함께 수행한다 — 그 사이 간극을 없애기 위함이다 (참고: Order-005).
+     * 3단계(Domain Layer)에서 StockQuantity의 산술과 함께 채운다.
+     */
+    public void decreaseStock(int quantity) {
+        throw new UnsupportedOperationException("3단계에서 구현");
+    }
 }

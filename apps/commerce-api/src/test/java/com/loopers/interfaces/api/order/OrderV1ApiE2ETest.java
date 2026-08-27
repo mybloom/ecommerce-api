@@ -114,20 +114,22 @@ class OrderV1ApiE2ETest {
                     () -> assertThat(response.getBody().data().status()).isEqualTo(OrderStatus.AWAITING_PAYMENT),
                     () -> assertThat(response.getBody().data().totalAmount()).isEqualTo(expectedTotalAmount),
                     () -> assertThat(response.getBody().data().orderedAt()).isNotNull(),
+                    () -> assertThat(response.getBody().data().isDuplicatedRequest()).isFalse(),
                     () -> assertThat(productRepository.findById(savedProduct.getId()).orElseThrow()
                             .getStockQuantity().getValue()).isEqualTo(initialStock - orderQuantity)
             );
         }
 
         @Test
-        @DisplayName("같은 Idempotency-Key로 다시 요청하면 같은 주문번호를 반환하고 재고는 한 번만 줄어든다")
+        @DisplayName("같은 Idempotency-Key로 다시 요청하면, 200응답이고 같은 주문번호를 반환하지만 isDuplicated는 참이고 재고는 한 번만 줄어든다")
         void returnsSameOrder_whenIdempotencyKeyIsReused() {
             // given
             Product savedProduct = productRepository.save(ProductFixture.aProductForBrand(brand.getId()));
             int initialStock = ProductFixture.DEFAULT_STOCK.getValue();
             int orderQuantity = 2;
 
-            HttpHeaders sameKeyHeaders = headersOf(UUID.randomUUID().toString());
+            String sameIdempotencyKey = UUID.randomUUID().toString();
+            HttpHeaders sameKeyHeaders = headersOf(sameIdempotencyKey);
             OrderV1Dto.PlaceOrderRequest request = new OrderV1Dto.PlaceOrderRequest(
                     List.of(new OrderV1Dto.OrderItemRequest(savedProduct.getId(), orderQuantity)));
             ParameterizedTypeReference<ApiResponse<OrderV1Dto.PlaceOrderResponse>> responseType =
@@ -144,6 +146,8 @@ class OrderV1ApiE2ETest {
                     () -> assertThat(second.getStatusCode()).isEqualTo(HttpStatus.OK),
                     () -> assertThat(second.getBody().data().orderNumber())
                             .isEqualTo(first.getBody().data().orderNumber()),
+                    () -> assertThat(first.getBody().data().isDuplicatedRequest()).isFalse(),
+                    () -> assertThat(second.getBody().data().isDuplicatedRequest()).isTrue(),
                     () -> assertThat(productRepository.findById(savedProduct.getId()).orElseThrow()
                             .getStockQuantity().getValue()).isEqualTo(initialStock - orderQuantity)
             );

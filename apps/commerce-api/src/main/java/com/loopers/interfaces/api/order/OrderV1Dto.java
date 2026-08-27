@@ -45,14 +45,16 @@ public class OrderV1Dto {
             String orderNumber,
             OrderStatus status,
             Long totalAmount,
-            ZonedDateTime orderedAt
+            ZonedDateTime orderedAt,
+            boolean isDuplicatedRequest
     ) {
         public static PlaceOrderResponse from(OrderUseCaseDto.PlaceOrderResult result) {
             return new PlaceOrderResponse(
                     result.orderNumber(),
                     result.status(),
                     result.totalAmount(),
-                    result.orderedAt()
+                    result.orderedAt(),
+                    result.isDuplicatedRequest()
             );
         }
     }

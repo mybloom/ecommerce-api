@@ -1,5 +1,6 @@
 package com.loopers.application.order;
 
+import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderStatus;
 
 import java.time.ZonedDateTime;
@@ -21,7 +22,31 @@ public class OrderUseCaseDto {
             String orderNumber,
             OrderStatus status,
             Long totalAmount,
-            ZonedDateTime orderedAt
+            ZonedDateTime orderedAt,
+            boolean isDuplicatedRequest
     ) {
+        /**
+         * 이번 요청으로 새로 접수·확정된 주문.
+         */
+        public static PlaceOrderResult from(Order order) {
+            return of(order, false);
+        }
+
+        /**
+         * 같은 Idempotency-Key로 이미 접수돼 있어 그대로 돌려주는 주문 (참고: Order-004).
+         */
+        public static PlaceOrderResult duplicated(Order order) {
+            return of(order, true);
+        }
+
+        private static PlaceOrderResult of(Order order, boolean isDuplicatedRequest) {
+            return new PlaceOrderResult(
+                    order.getOrderNumber().getValue(),
+                    order.getStatus(),
+                    order.getTotalAmount().getAmount(),
+                    order.getOrderedAt(),
+                    isDuplicatedRequest
+            );
+        }
     }
 }

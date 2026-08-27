@@ -24,6 +24,15 @@ public class ProductService {
         return product;
     }
 
+    /**
+     * 재고 차감을 위해 비관적 락을 걸고 조회한다 (참고: Order-006).
+     * 4단계(Infrastructure)에서 findByIdForUpdate가 생기면 본문을 채운다.
+     */
+    @Transactional
+    public Product retrieveForUpdate(ProductServiceDto.RetrieveCommand command) {
+        throw new UnsupportedOperationException("4단계에서 구현");
+    }
+
     @Transactional
     public void increaseLikeCount(ProductServiceDto.LikeCountCommand command) {
         findExistingProduct(command.productId()).increaseLikeCount();

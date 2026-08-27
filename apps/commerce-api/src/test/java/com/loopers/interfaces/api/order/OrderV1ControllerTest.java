@@ -61,20 +61,23 @@ class OrderV1ControllerTest {
             String orderNumber = "20260826-A3F9K2QP";
             long totalAmount = 200_000L;
             OrderUseCaseDto.PlaceOrderResult result = new OrderUseCaseDto.PlaceOrderResult(
-                    orderNumber, OrderStatus.AWAITING_PAYMENT, totalAmount, ZonedDateTime.now());
+                    orderNumber, OrderStatus.AWAITING_PAYMENT, totalAmount, ZonedDateTime.now(), false);
             when(orderUseCase.place(any(OrderUseCaseDto.PlaceOrderInfo.class))).thenReturn(result);
+
+            String requestBody = aRequestBody(productId, orderQuantity);
 
             // when & then
             mockMvc.perform(post(ENDPOINT)
                             .header(HEADER_OF_MEMBER_ID, memberId)
                             .header(HEADER_OF_IDEMPOTENCY_KEY, idempotencyKey)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(aRequestBody(productId, orderQuantity)))
+                            .content(requestBody))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.orderNumber").value(orderNumber))
                     .andExpect(jsonPath("$.data.status").value(OrderStatus.AWAITING_PAYMENT.name()))
                     .andExpect(jsonPath("$.data.totalAmount").value(totalAmount))
-                    .andExpect(jsonPath("$.data.orderedAt").exists());
+                    .andExpect(jsonPath("$.data.orderedAt").exists())
+                    .andExpect(jsonPath("$.data.isDuplicatedRequest").value(false));
         }
 
         @Test
@@ -87,15 +90,17 @@ class OrderV1ControllerTest {
             int orderQuantity = 2;
 
             OrderUseCaseDto.PlaceOrderResult result = new OrderUseCaseDto.PlaceOrderResult(
-                    "20260826-A3F9K2QP", OrderStatus.AWAITING_PAYMENT, 200_000L, ZonedDateTime.now());
+                    "20260826-A3F9K2QP", OrderStatus.AWAITING_PAYMENT, 200_000L, ZonedDateTime.now(), false);
             when(orderUseCase.place(any(OrderUseCaseDto.PlaceOrderInfo.class))).thenReturn(result);
+
+            String requestBody = aRequestBody(productId, orderQuantity);
 
             // when & then
             mockMvc.perform(post(ENDPOINT)
                             .header(HEADER_OF_MEMBER_ID, memberId)
                             .header(HEADER_OF_IDEMPOTENCY_KEY, idempotencyKey)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(aRequestBody(productId, orderQuantity)))
+                            .content(requestBody))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.id").doesNotExist());
         }
@@ -108,11 +113,13 @@ class OrderV1ControllerTest {
             long productId = 7L;
             int orderQuantity = 2;
 
+            String requestBody = aRequestBody(productId, orderQuantity);
+
             // when & then
             mockMvc.perform(post(ENDPOINT)
                             .header(HEADER_OF_IDEMPOTENCY_KEY, idempotencyKey)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(aRequestBody(productId, orderQuantity)))
+                            .content(requestBody))
                     .andExpect(status().isBadRequest());
         }
 
@@ -124,11 +131,13 @@ class OrderV1ControllerTest {
             long productId = 7L;
             int orderQuantity = 2;
 
+            String requestBody = aRequestBody(productId, orderQuantity);
+
             // when & then
             mockMvc.perform(post(ENDPOINT)
                             .header(HEADER_OF_MEMBER_ID, memberId)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(aRequestBody(productId, orderQuantity)))
+                            .content(requestBody))
                     .andExpect(status().isBadRequest());
         }
 
@@ -160,12 +169,14 @@ class OrderV1ControllerTest {
             long productId = 7L;
             int invalidQuantity = 0;
 
+            String requestBody = aRequestBody(productId, invalidQuantity);
+
             // when & then
             mockMvc.perform(post(ENDPOINT)
                             .header(HEADER_OF_MEMBER_ID, memberId)
                             .header(HEADER_OF_IDEMPOTENCY_KEY, idempotencyKey)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(aRequestBody(productId, invalidQuantity)))
+                            .content(requestBody))
                     .andExpect(status().isBadRequest());
         }
 
@@ -181,12 +192,14 @@ class OrderV1ControllerTest {
             when(orderUseCase.place(any(OrderUseCaseDto.PlaceOrderInfo.class)))
                     .thenThrow(new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다."));
 
+            String requestBody = aRequestBody(productId, orderQuantity);
+
             // when & then
             mockMvc.perform(post(ENDPOINT)
                             .header(HEADER_OF_MEMBER_ID, memberId)
                             .header(HEADER_OF_IDEMPOTENCY_KEY, idempotencyKey)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(aRequestBody(productId, orderQuantity)))
+                            .content(requestBody))
                     .andExpect(status().isNotFound());
         }
 
@@ -202,12 +215,14 @@ class OrderV1ControllerTest {
             when(orderUseCase.place(any(OrderUseCaseDto.PlaceOrderInfo.class)))
                     .thenThrow(new CoreException(ErrorType.CONFLICT, "재고가 부족합니다."));
 
+            String requestBody = aRequestBody(productId, orderQuantity);
+
             // when & then
             mockMvc.perform(post(ENDPOINT)
                             .header(HEADER_OF_MEMBER_ID, memberId)
                             .header(HEADER_OF_IDEMPOTENCY_KEY, idempotencyKey)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(aRequestBody(productId, orderQuantity)))
+                            .content(requestBody))
                     .andExpect(status().isConflict());
         }
     }

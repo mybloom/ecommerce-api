@@ -1,6 +1,6 @@
 ---
 name: pr-history
-description: 기능 작업을 마치고 PR용 브랜치를 구성할 때 사용. main에서 featureN을 만들어 최종 결과물을 의존 순서로 다시 커밋하고, _work에 섞인 .claude/** 등은 claude_docs로 옮긴 뒤 검증까지 한 번에 끝낸다. "featureN 만들어줘", "PR 브랜치 정리해줘", "히스토리 정리해줘", "PR용으로 커밋 다시 담아줘" 같은 요청에 적용.
+description: 기능 작업을 마치고 PR용 브랜치를 구성할 때 사용. main에서 featureN을 만들어 개발 순서 그대로 다시 커밋하고, _work에 섞인 .claude/** 등은 claude_docs로 옮긴 뒤 검증까지 한 번에 끝낸다. "featureN 만들어줘", "PR 브랜치 정리해줘", "히스토리 정리해줘", "PR용으로 커밋 다시 담아줘" 같은 요청에 적용.
 ---
 
 # PR용 히스토리 구성
@@ -19,23 +19,35 @@ description: 기능 작업을 마치고 PR용 브랜치를 구성할 때 사용.
 
 ### 1단계: `featureN` 에 구현을 담는다
 
-`main`에서 새 브랜치를 만들고 **최종 결과물을 의존 순서로 다시 커밋한다.**
+`main`에서 새 브랜치를 만들고 **개발 순서 그대로 다시 커밋한다.**
 
 ```bash
 git checkout -b featureN main
 
-# 단계별로 featureN_work의 최종 내용을 가져와 담는다.
+# 개발 단계마다 그 단계의 상태를 담는다.
 # 구현 브랜치 소유 경로만 가져온다 — git-conventions 의 "브랜치별 문서 소유" 표가 정한다
 git checkout featureN_work -- apps/*/src/ docs/도메인모델/
 ./gradlew :apps:commerce-api:test    # 커밋 전마다
 git commit -m "..."
 ```
 
-체리픽보다 이 방식이 낫다 — 중간 상태가 아니라 최종 내용이 단계별로 나뉘어 담기므로
-각 커밋이 온전하고 테스트도 통과한다.
+**커밋 순서는 개발 순서를 따른다.** 밖에서 안으로(outside-in) 개발했으면 PR도 밖에서
+안으로 담는다. 리뷰어가 **API 계약을 먼저 보고 그 아래를 따라 내려가도록** 하기 위해서다.
+`tfd-workflow-outside-in` 으로 만들었다면 그 스킬의 단계가 곧 커밋 단위다.
 
-**커밋 순서는 개발 순서가 아니라 의존 순서다.** 밖에서 안으로(outside-in) 개발했더라도
-의존 방향은 그대로 안쪽을 향하므로, 진입점부터 담으면 첫 커밋이 컴파일되지 않는다.
+아래 레이어는 개발 때와 같이 **계약만 담고 본문은 스켈레톤으로 막는다.** 그래야 각 커밋이
+컴파일되고 테스트도 통과한다. 아직 돌 수 없는 테스트는 `@Disabled` 로 두고, 마지막 봉합
+커밋에서 스켈레톤을 걷고 `@Disabled` 를 켠다.
+
+> **스켈레톤과 `@Disabled` 가 PR 중간에 보이는 것은 감수한다.** 그것이 outside-in 이 실제로
+> 진행된 모습이고, 마지막 커밋에서 전부 걷힌다. 대신 **마지막 커밋에서 반드시 0건임을 확인한다** —
+> 남으면 그 경로는 런타임에 500이 된다.
+
+체리픽보다 이 방식이 낫다 — `_work` 의 시행착오(되돌린 커밋, 뒤늦게 메운 구멍, 문서와 코드가
+섞인 커밋)를 그대로 옮기지 않고, **각 단계의 결론만** 담기 때문이다. 보정 커밋은 그것이
+고치는 단계에 접어 넣는다.
+
+> 안에서 밖으로(`tfd-workflow`) 개발했다면 그 순서가 곧 의존 순서라 스켈레톤이 필요 없다.
 
 ### 2단계: `claude_docs` 에 도구·문서 변경을 담는다
 
@@ -68,6 +80,10 @@ git diff --name-only main featureN -- .claude/ docs/참고자료/ apps/commerce-
 
 # claude_docs 가 작업 브랜치와 일치하는가 (비어 있어야 함)
 git diff --name-only claude_docs featureN_work -- .claude/
+
+# 마지막 커밋에 스켈레톤과 @Disabled 가 남지 않았는가 (둘 다 0건이어야 함)
+grep -rn "UnsupportedOperationException" apps/commerce-api/src/main
+grep -rn "@Disabled" apps/commerce-api/src/test
 
 git checkout featureN    # 작업 브랜치로 돌아온다. claude_docs 에 남아 있지 않도록
 ```

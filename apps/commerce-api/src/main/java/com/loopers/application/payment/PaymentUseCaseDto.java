@@ -1,5 +1,6 @@
 package com.loopers.application.payment;
 
+import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentMethod;
 import com.loopers.domain.payment.PaymentStatus;
 
@@ -24,5 +25,15 @@ public class PaymentUseCaseDto {
             ZonedDateTime approvedAt,
             String failureReason
     ) {
+        public static PayResult from(String orderNumber, Payment payment) {
+            return new PayResult(
+                    orderNumber,
+                    payment.getMethod(),
+                    payment.getStatus(),
+                    payment.getAmount().getAmount(),
+                    payment.getApprovedAt(),
+                    payment.getFailureReason()
+            );
+        }
     }
 }

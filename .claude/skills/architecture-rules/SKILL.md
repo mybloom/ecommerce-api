@@ -139,6 +139,33 @@ public enum BrandStatus {
 - ❌ Controller에 `@Transactional` 금지
 
 
+## 주석 정책
+
+**이름이 말하는 것을 주석으로 반복하지 않는다.** 주석은 코드가 말할 수 없는 것 — **왜 그렇게 했는지**,
+어떤 결정을 따랐는지, 무엇을 감수했는지 — 만 적는다.
+
+```java
+// ❌ 이름이 이미 말하고 있다
+/** 재고 차감을 위해 비관적 락을 걸고 조회한다. */
+Optional<Product> findByIdForUpdate(Long id);
+
+// ✅ 이름으로 충분하다
+Optional<Product> findByIdForUpdate(Long id);
+```
+
+- **Repository(인터페이스·JpaRepository·Impl)에는 주석을 달지 않는다.** 메서드명이 곧 쿼리라
+  덧붙일 것이 없다. `Impl`은 위임뿐이라 더욱 그렇다
+- 반대로 **결정 번호가 붙는 자리에는 남긴다.** 도메인 규칙, 트랜잭션 경계, 감수한 트레이드오프처럼
+  코드만 봐서는 "왜"를 알 수 없는 곳이다
+
+```java
+// ✅ 코드가 말하지 못하는 것
+/**
+ * 재고 부족 검사와 차감을 함께 수행한다 — 그 사이 간극을 없애기 위함이다 (참고: Order-005).
+ */
+public void decreaseStock(int quantity) { ... }
+```
+
 ## Lombok 사용 정책
 
 - ✅ 허용: `@Getter`, `@RequiredArgsConstructor`, `@Builder`, `@NoArgsConstructor(access = PROTECTED)`, `@EqualsAndHashCode`
@@ -180,19 +207,38 @@ public MemberUseCaseTest(
     - 그 외 필드는 정적 팩토리/빌더로 정상 경로 사용
 
 ### 테스트 메서드 구조
-- given/when/then을 **빈 줄로 구분** (주석 사용 X)
+- given/when/then을 **`// given`, `// when`, `// then` 주석으로 구분한다**
+    - 빈 줄만으로 나누면 given이 커질 때 경계가 보이지 않는다
+    - 실행과 검증이 물리적으로 붙어 있으면(`mockMvc.perform().andExpect()` 같은 체인)
+      `// when & then`으로 묶어 적는다. 억지로 나누지 않는다
+- **한 블록 안에서 목적이 갈리면 한 줄 띄운다.** 특히 given이 길어질 때 효과가 크다
 - 한 테스트는 한 동작(when)만 검증
 - 단언이 **2개 이상이면 반드시 `assertAll`로 묶는다** (예외 없음)
 - 단언이 1개일 때만 단독 `assertThat` 사용 가능
+- **`@DisplayName`은 그 테스트가 보장하는 것을 전부 말한다.** 조건(when)뿐 아니라
+    **then의 단언 전부**를 담는다. 메서드 이름은 `동작_조건` 형태로 짧게 두고, 상세는 `@DisplayName`이 진다
+
+```java
+@Test
+@DisplayName("같은 Idempotency-Key로 다시 요청하면, 200응답이고 같은 주문번호를 반환하지만 isDuplicated는 참이고 재고는 한 번만 줄어든다")
+void returnsSameOrder_whenIdempotencyKeyIsReused() { ... }
+```
+
+- 테스트가 깨지면 리포트에는 **이름만 뜬다.** 이름이 단언을 말하지 않으면 코드를 열어야 무엇이 깨졌는지 안다
+- `assertAll`로 단언 여러 개를 묶는 만큼, 이름도 그것들을 말해야 짝이 맞는다
+- **이름이 감당 못 할 만큼 길어지면 테스트를 쪼갤 신호다.** 길이가 곧 냄새 탐지기 역할을 한다
 
 ```java
 @Test
 void 브랜드를_조회하면_브랜드_정보를_반환한다() {
+    // given
     Brand brand = BrandFixture.aValidBrand();
     brandRepository.save(brand);
 
+    // when
     Brand result = brandService.getBrand(brand.getId());
 
+    // then
     assertAll(
             () -> assertThat(result.getId()).isEqualTo(brand.getId()),
             () -> assertThat(result.getName()).isEqualTo(BrandFixture.DEFAULT_NAME),
@@ -204,6 +250,27 @@ void 브랜드를_조회하면_브랜드_정보를_반환한다() {
   직접 박지 않는다. 변수명이 곧 테스트 의도를 설명해야 한다.
 - **변수명이 곧 테스트 의도를 설명해야 한다.** when/then 안에 의미 불명의
     리터럴을 직접 박지 않고, 의도가 드러나는 이름의 변수로 추출한다.
+- **헬퍼 메서드 호출 결과도 변수로 받는다.** 픽스처든 테스트 안의 private 메서드든,
+    호출을 when/then 안에 그대로 박지 않는다. 메서드 이름은 "무엇을 하는지"를 말하지만
+    **변수 이름은 "그 값이 무엇인지"를 말한다.** 단언을 읽을 때 필요한 건 후자다.
+
+```java
+// ❌ 무엇과 무엇을 비교하는지 한눈에 안 들어온다
+assertThat(stockOf(savedProduct)).isEqualTo(initialStock - orderQuantity);
+assertThat(findOrder(idempotencyKey).getStatus()).isEqualTo(OrderStatus.ORDER_FAILED);
+
+// ✅ 남은 재고와 실패한 주문을 비교한다는 게 드러난다
+int remainingStock = stockOf(savedProduct);
+Order failedOrder = findOrder(idempotencyKey);
+
+assertAll(
+        () -> assertThat(remainingStock).isEqualTo(initialStock - orderQuantity),
+        () -> assertThat(failedOrder.getStatus()).isEqualTo(OrderStatus.ORDER_FAILED)
+);
+```
+
+> `assertAll` 안에서 특히 중요하다. 람다 안에 호출이 박혀 있으면 단언이 깨졌을 때
+> **어떤 값이 문제였는지** 보려고 헬퍼를 따라가야 한다.
 
 ❌ **잘못된 예** — given이 when 안에 박혀있음:
 
@@ -223,7 +290,7 @@ void productId가_숫자가_아니면_400_Bad_Request를_반환한다() throws E
 }
 ```
 
-✅ **올바른 예** — given을 변수로 추출, when/then과 빈 줄로 분리:
+✅ **올바른 예** — given을 변수로 추출, 주석으로 블록 구분:
 
 ```java
 @Test
@@ -241,10 +308,70 @@ void 존재하지_않는_상품_조회_시_NOT_FOUND_예외가_발생한다() {
 void productId가_숫자가_아니면_400_Bad_Request를_반환한다() throws Exception {
     String invalidProductId = "string";
 
+    // given
+    String invalidProductId = "string";
+
+    // when & then
     mockMvc.perform(get("/api/v1/products/" + invalidProductId))
             .andExpect(status().isBadRequest());
 }
 ```
+
+#### given 안에서 목적이 갈릴 때
+
+한 블록에 성격이 다른 준비가 섞이면 한 줄 띄워 나눈다.
+아래는 앞이 **주문 데이터 준비**, 뒤가 **HTTP 요청 구성**이다.
+
+```java
+@Test
+void 판매중인_상품을_주문하면_결제_대기_상태가_된다() {
+    // given
+    Product savedProduct = productRepository.save(ProductFixture.aProductForBrand(brand.getId()));
+    int initialStock = ProductFixture.DEFAULT_STOCK.getValue();
+    int orderQuantity = 2;
+    Long expectedTotalAmount = ProductFixture.DEFAULT_PRICE.getAmount() * orderQuantity;
+
+    HttpHeaders headers = headersOf(UUID.randomUUID().toString());
+    OrderV1Dto.PlaceOrderRequest request = new OrderV1Dto.PlaceOrderRequest(
+            List.of(new OrderV1Dto.OrderItemRequest(savedProduct.getId(), orderQuantity)));
+    ParameterizedTypeReference<ApiResponse<OrderV1Dto.PlaceOrderResponse>> responseType =
+            new ParameterizedTypeReference<>() {};
+
+    // when
+    ResponseEntity<ApiResponse<OrderV1Dto.PlaceOrderResponse>> response = testRestTemplate.exchange(
+            ENDPOINT, HttpMethod.POST, new HttpEntity<>(request, headers), responseType);
+
+    // then
+    assertAll(
+            () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
+            () -> assertThat(response.getBody().data().totalAmount()).isEqualTo(expectedTotalAmount),
+            () -> assertThat(productRepository.findById(savedProduct.getId()).orElseThrow()
+                    .getStockQuantity().getValue()).isEqualTo(initialStock - orderQuantity)
+    );
+}
+```
+
+### 테스트 안 private 헬퍼 이름 규칙
+
+이름만 보고 **given에 쓸 것인지 then에 쓸 것인지** 알 수 있어야 한다.
+
+| 종류 | 접두사 | 예 |
+|---|---|---|
+| 테스트 데이터를 **만든다** (given) | `a~` / `an~` — 픽스처와 같은 접두사 | `anOrderInfo(...)`, `aProductForBrand(...)` |
+| 시스템 상태를 **읽어온다** (then) | `find~` | `findOrder(key)`, `findStockOf(product)` |
+
+```java
+// ❌ 읽어오는 헬퍼인데 이름이 그걸 말하지 않는다
+private int stockOf(Product product) { ... }
+
+// ✅
+private int findStockOf(Product product) { ... }
+```
+
+- **when은 헬퍼로 감싸지 않는다.** 무엇을 실행하는지가 테스트 안에 그대로 보여야 한다.
+    요청 조립·호출을 헬퍼로 빼면 단언이 무엇에 대한 것인지 따라가야 알게 된다
+- 헬퍼 호출 결과는 [위 규칙](#테스트-메서드-구조)대로 **변수로 받는다.**
+    `find~`가 "읽어온다"를 말하면, 변수 이름이 "읽어온 그 값이 무엇인지"를 말한다
 
 ### Repository 테스트 작성 기준
 

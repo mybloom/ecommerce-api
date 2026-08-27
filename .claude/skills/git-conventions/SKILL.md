@@ -84,6 +84,19 @@ Claude-Session: https://claude.ai/code/session_xxx
 도메인 명세만 구현 브랜치로 가는 이유: 명세와 코드가 어긋나면 곧바로 문제가 되므로,
 리뷰어가 둘을 나란히 봐야 한다.
 
+### 작업 중에는 전부 `_work`에 커밋한다
+
+위 표는 **최종적으로 어느 브랜치에 남는지**를 정한 것이지, 커밋할 때마다 브랜치를 옮기라는 뜻이 아니다.
+
+작업 도중 스킬이나 컨벤션 문서를 고치는 일은 흔하다. 그때마다 `claude_docs`로 checkout →
+커밋 → 되돌아오기 → 머지를 하면 **작업 흐름이 끊기고 머지 커밋만 늘어난다.**
+`.claude/**` 변경도 그냥 `_work`에 커밋하고, **`featureN`을 만들 때 분류한다.**
+
+- `_work`는 push하지 않는 로컬 브랜치라 히스토리가 섞여도 비용이 없다
+- 어차피 `featureN`은 경로를 골라 담는 방식으로 구성하므로, 분류는 그때 한 번에 처리된다
+- 스킬을 고친 즉시 그 브랜치에서 쓸 수 있다. `claude_docs`에만 커밋하면 정작 작업 중인
+  브랜치의 워킹트리에는 없어서 적용되지 않는다
+
 ## PR용 히스토리 구성
 
 **시행착오를 그대로 올리지 않는다.** 작업 브랜치에는 되돌린 커밋, 뒤늦게 메운 구멍,
@@ -103,6 +116,21 @@ git commit -m "..."
 체리픽보다 이 방식이 낫다 — 중간 상태가 아니라 최종 내용이 단계별로 나뉘어 담기므로
 각 커밋이 온전하고 테스트도 통과한다.
 
+### `claude_docs` 소유 파일 분류
+
+`_work`에 섞여 들어간 `.claude/**` 등은 `featureN`에 담지 않고 `claude_docs`로 옮긴다.
+위 "브랜치별 문서 소유" 표가 어디로 갈지 정한다.
+
+```bash
+# featureN 에는 구현 브랜치 소유 경로만 담는다
+git checkout featureN_work -- apps/*/src/ docs/도메인모델/
+
+# claude_docs 소유 파일은 그쪽으로 옮겨 담는다
+git checkout claude_docs
+git checkout featureN_work -- .claude/ apps/commerce-api/CLAUDE.md docs/참고자료/
+git commit -m "chore: [스킬] ..."
+```
+
 ### 완료 후 검증
 
 ```bash
@@ -111,6 +139,9 @@ git diff featureN featureN_work -- apps/*/src/
 
 # 의도한 파일만 들어갔는가
 git -c core.quotepath=false diff --name-only main featureN
+
+# claude_docs 소유 파일이 featureN 에 섞이지 않았는가 (비어 있어야 함)
+git diff --name-only main featureN -- .claude/ docs/참고자료/ apps/commerce-api/CLAUDE.md
 ```
 
 `featureN_work`는 지우지 않고 남겨둔다.

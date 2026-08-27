@@ -10,8 +10,11 @@ skill에 따로 있다(아래 참조). 같은 내용이 두 곳에 있으면 서
 | 위치 | 내용 |
 |---|---|
 | `.claude/skills/architecture-rules/` | 레이어 의존성, 패키지 네이밍, DTO 변환 체인, 예외 처리(`CoreException` / `ErrorType`), Lombok 정책, 테스트 컨벤션, 참고 구현체 |
-| `.claude/skills/tfd-workflow/` | 새 기능 추가 절차 — 한 번에 한 레이어씩, 테스트 먼저, 레이어마다 멈춰서 확인 |
-| `.claude/skills/git-conventions/` | 커밋 메시지 형식, 커밋 분리 기준, 브랜치별 문서 소유, PR 히스토리 구성 |
+| `.claude/skills/tfd-workflow/` | 새 기능 추가 절차 — 한 번에 한 레이어씩, 테스트 먼저, 레이어마다 멈춰서 확인. **안에서 밖으로**(도메인부터) |
+| `.claude/skills/tfd-workflow-outside-in/` | 같은 절차를 **밖에서 안으로**(API 진입점부터). 아래 레이어는 계약만 만들어 스켈레톤으로 막고 한 겹씩 채운다 |
+| `.claude/skills/test-effectiveness/` | 작성한 테스트가 실제로 결함을 잡는지 검증. 전체가 초록불이 된 뒤 커밋 직전에 |
+| `.claude/skills/git-conventions/` | 커밋 메시지 형식, 커밋 분리 기준, 브랜치별 문서 소유, push/PR 규칙 |
+| `.claude/skills/pr-history/` | 기능을 마친 뒤 `featureN`과 `claude_docs`에 히스토리를 다시 구성 |
 | `docs/도메인모델/` | 도메인 명세. 해당 도메인 작업을 **시작하기 전에** 먼저 읽는다 |
 
 ## 명령어

@@ -2,6 +2,8 @@ package com.loopers.domain.product;
 
 import com.loopers.domain.BaseEntity;
 import com.loopers.domain.shared.Money;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -91,5 +93,14 @@ public class Product extends BaseEntity {
 
     public boolean isSoldOut() {
         return stockQuantity.isSoldOut();
+    }
+
+    public void decreaseStock(int quantity) {
+        if (!stockQuantity.isEnough(quantity)) {
+            throw new CoreException(ErrorType.CONFLICT,
+                    "재고가 부족합니다. stock=" + stockQuantity.getValue() + ", quantity=" + quantity);
+        }
+
+        this.stockQuantity = this.stockQuantity.subtract(quantity);
     }
 }

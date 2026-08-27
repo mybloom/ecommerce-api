@@ -1,6 +1,5 @@
-package com.loopers.domain.point;
+package com.loopers.domain.shared;
 
-import com.loopers.domain.shared.Money;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.DisplayName;
@@ -199,6 +198,64 @@ class MoneyTest {
         @DisplayName("Money.ZERO와 Money.of(0L)은 동등하다")
         void zero_equals_of_zero() {
             assertThat(Money.ZERO).isEqualTo(Money.of(0L));
+        }
+    }
+
+    @Nested
+    @DisplayName("multiply")
+    class Multiply {
+
+        @Test
+        @DisplayName("금액에 수량을 곱한 결과를 반환한다")
+        void returnsProduct() {
+            // given
+            Money unitPrice = Money.of(1_000L);
+            int quantity = 3;
+
+            // when
+            Money result = unitPrice.multiply(quantity);
+
+            // then
+            assertThat(result).isEqualTo(Money.of(3_000L));
+        }
+
+        @Test
+        @DisplayName("수량이 1이면 자신과 같은 값을 반환한다")
+        void returnsSameAmount_whenQuantityIsOne() {
+            // given
+            Money unitPrice = Money.of(1_000L);
+            int quantity = 1;
+
+            // when
+            Money result = unitPrice.multiply(quantity);
+
+            // then
+            assertThat(result).isEqualTo(unitPrice);
+        }
+
+        @DisplayName("수량이 0 이하이면 BAD_REQUEST 예외가 발생한다")
+        @ParameterizedTest
+        @ValueSource(ints = {0, -1})
+        void throwsBadRequest_whenQuantityIsNotPositive(int invalidQuantity) {
+            // given
+            Money unitPrice = Money.of(1_000L);
+
+            // when & then
+            assertThatThrownBy(() -> unitPrice.multiply(invalidQuantity))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST));
+        }
+
+        @Test
+        @DisplayName("결과가 long 범위를 넘으면 ArithmeticException이 발생한다")
+        void throwsArithmetic_whenResultOverflows() {
+            // given
+            Money max = Money.of(Long.MAX_VALUE);
+            int quantity = 2;
+
+            // when & then
+            assertThatThrownBy(() -> max.multiply(quantity))
+                    .isInstanceOf(ArithmeticException.class);
         }
     }
 }

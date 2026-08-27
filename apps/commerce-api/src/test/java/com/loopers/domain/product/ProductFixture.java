@@ -62,6 +62,11 @@ public class ProductFixture {
         return product;
     }
 
+    public static Product aProductForBrandWithStock(Long brandId, int stock) {
+        return Product.create(DEFAULT_NAME, DEFAULT_DESCRIPTION, DEFAULT_IMAGE,
+                brandId, DEFAULT_PRICE, StockQuantity.of(stock), DEFAULT_OPENED_AT);
+    }
+
     public static Product aProductForBrandWithStatus(Long brandId, ProductStatus status) {
         Product product = aProductForBrand(brandId);
         if (status == ProductStatus.OFF_SALE) product.putOffSale();

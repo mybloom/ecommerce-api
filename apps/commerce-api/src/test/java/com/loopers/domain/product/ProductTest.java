@@ -2,9 +2,14 @@ package com.loopers.domain.product;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 class ProductTest {
 
@@ -110,6 +115,90 @@ class ProductTest {
             product.decreaseLikeCount();
 
             assertThat(product.getLikeCount()).isEqualTo(0);
+        }
+    }
+
+    @Nested
+    @DisplayName("decreaseStock")
+    class DecreaseStock {
+
+        @Test
+        @DisplayName("요청 수량만큼 재고를 차감한다")
+        void decreasesStock() {
+            // given
+            int initialStock = 10;
+            int orderQuantity = 3;
+            Product product = ProductFixture.aProductWithStock(initialStock);
+
+            // when
+            product.decreaseStock(orderQuantity);
+
+            // then
+            assertThat(product.getStockQuantity()).isEqualTo(StockQuantity.of(initialStock - orderQuantity));
+        }
+
+        @Test
+        @DisplayName("재고 전량을 주문하면 재고가 0이 되고 품절 상태가 된다")
+        void becomesSoldOut_whenAllStockIsOrdered() {
+            // given
+            int initialStock = 3;
+            int orderQuantity = 3;
+            Product product = ProductFixture.aProductWithStock(initialStock);
+
+            // when
+            product.decreaseStock(orderQuantity);
+
+            // then
+            assertAll(
+                    () -> assertThat(product.getStockQuantity()).isEqualTo(StockQuantity.of(0)),
+                    () -> assertThat(product.isSoldOut()).isTrue()
+            );
+        }
+
+        @Test
+        @DisplayName("재고보다 많은 수량을 주문하면 CONFLICT 예외가 발생한다")
+        void throwsConflict_whenQuantityExceedsStock() {
+            // given
+            int initialStock = 2;
+            int orderQuantity = 3;
+            Product product = ProductFixture.aProductWithStock(initialStock);
+
+            // when & then
+            assertThatThrownBy(() -> product.decreaseStock(orderQuantity))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("품절 상품을 주문하면 CONFLICT 예외가 발생한다")
+        void throwsConflict_whenProductIsSoldOut() {
+            // given
+            int soldOutStock = 0;
+            int orderQuantity = 1;
+            Product product = ProductFixture.aProductWithStock(soldOutStock);
+
+            // when & then
+            assertThatThrownBy(() -> product.decreaseStock(orderQuantity))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("재고가 부족해 실패하면 CONFLICT가 나고 재고는 그대로 남는다")
+        void keepsStockUnchanged_whenDecreaseFails() {
+            // given
+            int initialStock = 2;
+            int orderQuantity = 3;
+            Product product = ProductFixture.aProductWithStock(initialStock);
+
+            // when
+            Throwable thrown = catchThrowable(() -> product.decreaseStock(orderQuantity));
+
+            // then
+            assertAll(
+                    () -> assertThat(thrown).isInstanceOf(CoreException.class),
+                    () -> assertThat(product.getStockQuantity()).isEqualTo(StockQuantity.of(initialStock))
+            );
         }
     }
 }

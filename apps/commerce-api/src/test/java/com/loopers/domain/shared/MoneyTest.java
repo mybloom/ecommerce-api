@@ -1,6 +1,5 @@
-package com.loopers.domain.point;
+package com.loopers.domain.shared;
 
-import com.loopers.domain.shared.Money;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.DisplayName;

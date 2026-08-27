@@ -48,6 +48,8 @@ public class Order extends BaseEntity {
     @Column(nullable = false)
     private ZonedDateTime orderedAt;
 
+    private ZonedDateTime paidAt;
+
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "order_id")
     private List<OrderLine> lines = new ArrayList<>();
@@ -93,6 +95,26 @@ public class Order extends BaseEntity {
         status.requireTransitionTo(OrderStatus.ORDER_FAILED);
 
         this.status = OrderStatus.ORDER_FAILED;
+    }
+
+    /**
+     * 결제 완료 처리. 이 전이를 트리거하는 곳은 결제 흐름뿐이다 (참고: 07_payment.md Payment-004).
+     */
+    public void pay() {
+        status.requireTransitionTo(OrderStatus.PAID);
+
+        this.status = OrderStatus.PAID;
+        this.paidAt = ZonedDateTime.now();
+    }
+
+    /**
+     * 결제 실패 처리. <b>확보했던 재고를 되돌리는 것은 호출자의 몫이다</b> — 차감이 다른 트랜잭션에서
+     * 일어났으므로 롤백으로 되돌아오지 않는다 (참고: Order-007).
+     */
+    public void markPaymentFailed() {
+        status.requireTransitionTo(OrderStatus.PAYMENT_FAILED);
+
+        this.status = OrderStatus.PAYMENT_FAILED;
     }
 
     public boolean isOwnedBy(Long memberId) {

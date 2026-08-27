@@ -8,8 +8,7 @@ import com.loopers.domain.member.Member;
 import com.loopers.domain.member.MemberRepository;
 import com.loopers.domain.order.IdempotencyKey;
 import com.loopers.domain.order.Order;
-import com.loopers.domain.order.OrderService;
-import com.loopers.domain.order.OrderServiceDto;
+import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductFixture;
@@ -48,18 +47,18 @@ class OrderUseCaseTest {
     private Brand brand;
 
     private final OrderUseCase orderUseCase;
-    private final OrderService orderService;
+    private final OrderRepository orderRepository;
     private final MemberRepository memberRepository;
     private final BrandRepository brandRepository;
     private final ProductRepository productRepository;
     private final DatabaseCleanUp databaseCleanUp;
 
     @Autowired
-    public OrderUseCaseTest(OrderUseCase orderUseCase, OrderService orderService,
+    public OrderUseCaseTest(OrderUseCase orderUseCase, OrderRepository orderRepository,
                             MemberRepository memberRepository, BrandRepository brandRepository,
                             ProductRepository productRepository, DatabaseCleanUp databaseCleanUp) {
         this.orderUseCase = orderUseCase;
-        this.orderService = orderService;
+        this.orderRepository = orderRepository;
         this.memberRepository = memberRepository;
         this.brandRepository = brandRepository;
         this.productRepository = productRepository;
@@ -83,9 +82,7 @@ class OrderUseCaseTest {
     }
 
     private Order findOrder(String idempotencyKey) {
-        return orderService.findByIdempotencyKey(
-                        new OrderServiceDto.FindByIdempotencyKeyCommand(IdempotencyKey.of(idempotencyKey)))
-                .orElseThrow();
+        return orderRepository.findByIdempotencyKey(IdempotencyKey.of(idempotencyKey)).orElseThrow();
     }
 
     private int findStockOf(Product product) {

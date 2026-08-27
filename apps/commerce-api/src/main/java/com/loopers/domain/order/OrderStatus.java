@@ -25,13 +25,14 @@ public enum OrderStatus {
      * 이 상태에서 갈 수 있는 다음 상태들. 상수의 생성자 인자로는 담을 수 없어서
      * (아직 만들어지지 않은 상수를 참조하게 된다) static 블록에서 채운다.
      * 채우지 않은 상태는 빈 집합이라 어디로도 갈 수 없다.
-     * AWAITING_PAYMENT에서 나가는 전이는 결제가 트리거하므로 Payment 구현 때 추가한다 (참고: 07_payment.md).
+     * AWAITING_PAYMENT에서 나가는 전이를 트리거하는 곳은 결제 흐름뿐이다 (참고: 07_payment.md Payment-004).
      */
     @Getter(AccessLevel.NONE)
     private Set<OrderStatus> allowedNextStatuses = Set.of();
 
     static {
         PENDING.allowedNextStatuses = Set.of(AWAITING_PAYMENT, ORDER_FAILED);
+        AWAITING_PAYMENT.allowedNextStatuses = Set.of(PAID, PAYMENT_FAILED);
     }
 
     public boolean isPayable() {

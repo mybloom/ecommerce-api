@@ -103,4 +103,11 @@ public class Product extends BaseEntity {
 
         this.stockQuantity = this.stockQuantity.subtract(quantity);
     }
+
+    /**
+     * 결제 실패로 확보했던 재고를 되돌린다. 복원 수량의 근거는 항상 OrderLine.quantity다 (참고: Order-007).
+     */
+    public void increaseStock(int quantity) {
+        this.stockQuantity = this.stockQuantity.add(quantity);
+    }
 }

@@ -2,6 +2,7 @@ package com.loopers.infrastructure.order;
 
 import com.loopers.domain.order.IdempotencyKey;
 import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderNumber;
 import com.loopers.domain.order.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -27,5 +28,10 @@ public class OrderRepositoryImpl implements OrderRepository {
     @Override
     public Optional<Order> findByIdempotencyKey(IdempotencyKey idempotencyKey) {
         return orderJpaRepository.findByIdempotencyKey(idempotencyKey);
+    }
+
+    @Override
+    public Optional<Order> findByOrderNumber(OrderNumber orderNumber) {
+        return orderJpaRepository.findByOrderNumber(orderNumber);
     }
 }

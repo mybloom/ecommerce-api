@@ -35,6 +35,43 @@ class OrderServiceTest {
     }
 
     @Nested
+    @DisplayName("findByOrderNumber - 주문번호로 조회 시,")
+    class FindByOrderNumber {
+
+        @Test
+        @DisplayName("해당 주문번호의 주문을 반환한다")
+        void returnsOrder_whenOrderNumberExists() {
+            // given
+            OrderNumber orderNumber = OrderFixture.DEFAULT_ORDER_NUMBER;
+            Order savedOrder = OrderFixture.aConfirmedOrder();
+            OrderServiceDto.FindByOrderNumberCommand command =
+                    new OrderServiceDto.FindByOrderNumberCommand(orderNumber);
+            when(orderRepository.findByOrderNumber(orderNumber)).thenReturn(Optional.of(savedOrder));
+
+            // when
+            Order result = orderService.findByOrderNumber(command);
+
+            // then
+            assertThat(result).isSameAs(savedOrder);
+        }
+
+        @Test
+        @DisplayName("주문이 없으면 NOT_FOUND 예외가 발생한다")
+        void throwsNotFound_whenOrderNumberDoesNotExist() {
+            // given
+            OrderNumber unknownOrderNumber = OrderNumber.of("20260827-ZZZZZZZZ");
+            OrderServiceDto.FindByOrderNumberCommand command =
+                    new OrderServiceDto.FindByOrderNumberCommand(unknownOrderNumber);
+            when(orderRepository.findByOrderNumber(unknownOrderNumber)).thenReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> orderService.findByOrderNumber(command))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
+        }
+    }
+
+    @Nested
     @DisplayName("draft - 주문 접수 시,")
     class Draft {
 
@@ -195,6 +232,84 @@ class OrderServiceTest {
 
             // when & then
             assertThatThrownBy(() -> orderService.markOrderFailed(command))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
+        }
+    }
+
+    @Nested
+    @DisplayName("pay - 결제 완료 처리 시,")
+    class Pay {
+
+        @Test
+        @DisplayName("주문을 찾아 결제완료 상태로 만들고 결제 시각을 기록한다")
+        void marksOrderPaid() {
+            // given
+            Long orderId = 1L;
+            Order confirmedOrder = OrderFixture.aConfirmedOrder();
+            when(orderRepository.findById(orderId)).thenReturn(Optional.of(confirmedOrder));
+
+            // when
+            Order result = orderService.pay(new OrderServiceDto.PayCommand(orderId));
+
+            // then
+            assertAll(
+                    () -> assertThat(result.getStatus()).isEqualTo(OrderStatus.PAID),
+                    () -> assertThat(result.getPaidAt()).isNotNull()
+            );
+        }
+
+        @Test
+        @DisplayName("주문이 존재하지 않으면 NOT_FOUND 예외가 발생한다")
+        void throwsNotFound_whenOrderDoesNotExist() {
+            // given
+            Long nonExistentOrderId = Long.MAX_VALUE;
+            OrderServiceDto.PayCommand command = new OrderServiceDto.PayCommand(nonExistentOrderId);
+            when(orderRepository.findById(nonExistentOrderId)).thenReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> orderService.pay(command))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
+        }
+    }
+
+    @Nested
+    @DisplayName("markPaymentFailed - 결제 실패 처리 시,")
+    class MarkPaymentFailed {
+
+        @Test
+        @DisplayName("주문을 찾아 결제실패 상태로 만들고 라인과 총액은 그대로 둔다")
+        void marksPaymentFailed() {
+            // given
+            Long orderId = 1L;
+            Order confirmedOrder = OrderFixture.aConfirmedOrder();
+            Money totalAmountBeforeFailure = confirmedOrder.getTotalAmount();
+            when(orderRepository.findById(orderId)).thenReturn(Optional.of(confirmedOrder));
+
+            // when
+            Order result = orderService.markPaymentFailed(new OrderServiceDto.MarkPaymentFailedCommand(orderId));
+
+            // then
+            assertAll(
+                    () -> assertThat(result.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED),
+                    () -> assertThat(result.getLines()).hasSize(1),
+                    () -> assertThat(result.getTotalAmount()).isEqualTo(totalAmountBeforeFailure),
+                    () -> assertThat(result.getPaidAt()).isNull()
+            );
+        }
+
+        @Test
+        @DisplayName("주문이 존재하지 않으면 NOT_FOUND 예외가 발생한다")
+        void throwsNotFound_whenOrderDoesNotExist() {
+            // given
+            Long nonExistentOrderId = Long.MAX_VALUE;
+            OrderServiceDto.MarkPaymentFailedCommand command =
+                    new OrderServiceDto.MarkPaymentFailedCommand(nonExistentOrderId);
+            when(orderRepository.findById(nonExistentOrderId)).thenReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> orderService.markPaymentFailed(command))
                     .isInstanceOfSatisfying(CoreException.class, e ->
                             assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
         }

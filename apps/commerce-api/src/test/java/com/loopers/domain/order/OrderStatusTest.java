@@ -5,8 +5,11 @@ import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+
+import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -56,35 +59,57 @@ class OrderStatusTest {
     @DisplayName("requireTransitionTo - 상태 전이 검사 시,")
     class RequireTransitionTo {
 
-        @DisplayName("허용된 전이면 아무 일도 일어나지 않는다")
+        @DisplayName("접수 상태에서 결제대기·주문실패로 가는 전이는 아무 일도 일어나지 않는다")
         @ParameterizedTest
         @EnumSource(value = OrderStatus.class, names = {"AWAITING_PAYMENT", "ORDER_FAILED"})
-        void passes_whenTransitionIsAllowed(OrderStatus reachableStatus) {
+        void passes_whenPendingTransitionsToReachableStatus(OrderStatus reachableStatus) {
             assertThatCode(() -> OrderStatus.PENDING.requireTransitionTo(reachableStatus))
                     .doesNotThrowAnyException();
         }
 
-        @DisplayName("허용되지 않은 전이면 CONFLICT 예외가 발생한다")
+        @DisplayName("접수 상태에서 결제완료·결제실패·접수로 가는 전이는 CONFLICT 예외가 발생한다")
         @ParameterizedTest
         @EnumSource(value = OrderStatus.class, names = {"PAID", "PAYMENT_FAILED", "PENDING"})
-        void throwsConflict_whenTransitionIsNotAllowed(OrderStatus unreachableStatus) {
+        void throwsConflict_whenPendingTransitionsToUnreachableStatus(OrderStatus unreachableStatus) {
             assertThatThrownBy(() -> OrderStatus.PENDING.requireTransitionTo(unreachableStatus))
                     .isInstanceOfSatisfying(CoreException.class, e ->
                             assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT));
         }
 
-        @DisplayName("접수가 아닌 상태에서는 어디로도 전이할 수 없고 CONFLICT 예외가 발생한다")
+        @DisplayName("결제대기 상태에서 결제완료·결제실패로 가는 전이는 아무 일도 일어나지 않는다")
         @ParameterizedTest
-        @EnumSource(value = OrderStatus.class, names = "PENDING", mode = EnumSource.Mode.EXCLUDE)
-        void throwsConflict_whenSourceIsNotPending(OrderStatus terminalStatus) {
-            assertAll(
-                    () -> assertThatThrownBy(() -> terminalStatus.requireTransitionTo(OrderStatus.AWAITING_PAYMENT))
-                            .isInstanceOfSatisfying(CoreException.class, e ->
-                                    assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT)),
-                    () -> assertThatThrownBy(() -> terminalStatus.requireTransitionTo(OrderStatus.ORDER_FAILED))
-                            .isInstanceOfSatisfying(CoreException.class, e ->
-                                    assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT))
-            );
+        @EnumSource(value = OrderStatus.class, names = {"PAID", "PAYMENT_FAILED"})
+        void passes_whenAwaitingPaymentTransitionsToPaymentResult(OrderStatus paymentResultStatus) {
+            assertThatCode(() -> OrderStatus.AWAITING_PAYMENT.requireTransitionTo(paymentResultStatus))
+                    .doesNotThrowAnyException();
+        }
+
+        @DisplayName("결제대기 상태에서 결제 결과가 아닌 상태로 가는 전이는 CONFLICT 예외가 발생한다")
+        @ParameterizedTest
+        @EnumSource(value = OrderStatus.class, names = {"PENDING", "AWAITING_PAYMENT", "ORDER_FAILED"})
+        void throwsConflict_whenAwaitingPaymentTransitionsElsewhere(OrderStatus unreachableStatus) {
+            assertThatThrownBy(() -> OrderStatus.AWAITING_PAYMENT.requireTransitionTo(unreachableStatus))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT));
+        }
+
+        /**
+         * 목표 상태를 전부 훑는다. "어디로도 갈 수 없다"는 주장을 일부만 검사하면,
+         * 나중에 그 상태에서 나가는 전이가 열려도 초록불이 그대로 유지된다.
+         */
+        @DisplayName("종결된 상태에서는 어떤 상태로도 전이할 수 없고 전부 CONFLICT 예외가 발생한다")
+        @ParameterizedTest
+        @EnumSource(value = OrderStatus.class, names = {"ORDER_FAILED", "PAID", "PAYMENT_FAILED"})
+        void throwsConflict_whenSourceIsTerminal(OrderStatus terminalStatus) {
+            // given
+            OrderStatus[] allTargets = OrderStatus.values();
+
+            // when & then
+            assertAll(Arrays.stream(allTargets)
+                    .map(target -> (Executable) () ->
+                            assertThatThrownBy(() -> terminalStatus.requireTransitionTo(target))
+                                    .isInstanceOfSatisfying(CoreException.class, e ->
+                                            assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT))));
         }
 
         @Test

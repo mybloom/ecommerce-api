@@ -201,4 +201,72 @@ class ProductTest {
             );
         }
     }
+
+    @Nested
+    @DisplayName("increaseStock")
+    class IncreaseStock {
+
+        @Test
+        @DisplayName("요청 수량만큼 재고를 복원한다")
+        void increasesStock() {
+            // given
+            int remainingStock = 7;
+            int restoredQuantity = 3;
+            Product product = ProductFixture.aProductWithStock(remainingStock);
+
+            // when
+            product.increaseStock(restoredQuantity);
+
+            // then
+            assertThat(product.getStockQuantity()).isEqualTo(StockQuantity.of(remainingStock + restoredQuantity));
+        }
+
+        @Test
+        @DisplayName("품절 상품에 재고를 복원하면 품절이 풀린다")
+        void becomesAvailable_whenSoldOutProductIsRestored() {
+            // given
+            int soldOutStock = 0;
+            int restoredQuantity = 2;
+            Product product = ProductFixture.aProductWithStock(soldOutStock);
+
+            // when
+            product.increaseStock(restoredQuantity);
+
+            // then
+            assertAll(
+                    () -> assertThat(product.getStockQuantity()).isEqualTo(StockQuantity.of(restoredQuantity)),
+                    () -> assertThat(product.isSoldOut()).isFalse()
+            );
+        }
+
+        @Test
+        @DisplayName("차감했던 수량을 그대로 복원하면 차감 전 재고로 돌아온다")
+        void returnsToOriginalStock_whenDecreasedQuantityIsRestored() {
+            // given
+            int initialStock = 10;
+            int orderQuantity = 4;
+            Product product = ProductFixture.aProductWithStock(initialStock);
+            product.decreaseStock(orderQuantity);
+
+            // when
+            product.increaseStock(orderQuantity);
+
+            // then
+            assertThat(product.getStockQuantity()).isEqualTo(StockQuantity.of(initialStock));
+        }
+
+        @Test
+        @DisplayName("복원 수량이 0 이하이면 BAD_REQUEST 예외가 발생한다")
+        void throwsBadRequest_whenQuantityIsNotPositive() {
+            // given
+            int remainingStock = 5;
+            int invalidQuantity = 0;
+            Product product = ProductFixture.aProductWithStock(remainingStock);
+
+            // when & then
+            assertThatThrownBy(() -> product.increaseStock(invalidQuantity))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST));
+        }
+    }
 }

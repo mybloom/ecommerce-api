@@ -186,6 +186,88 @@ class OrderTest {
     }
 
     @Nested
+    @DisplayName("pay - 결제 완료 처리 시,")
+    class Pay {
+
+        @Test
+        @DisplayName("결제대기 주문을 결제완료로 전이하고 결제 시각을 기록한다")
+        void transitionsToPaidWithPaidAt() {
+            // given
+            Order order = OrderFixture.aConfirmedOrder();
+
+            // when
+            order.pay();
+
+            // then
+            assertAll(
+                    () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID),
+                    () -> assertThat(order.getPaidAt()).isNotNull()
+            );
+        }
+
+        @Test
+        @DisplayName("접수만 된 주문은 결제할 수 없고 CONFLICT 예외가 발생한다")
+        void throwsConflict_whenOrderIsPending() {
+            // given
+            Order order = OrderFixture.aDraftedOrder();
+
+            // when & then
+            assertThatThrownBy(order::pay)
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("이미 결제된 주문을 다시 결제하면 CONFLICT 예외가 발생한다")
+        void throwsConflict_whenOrderIsAlreadyPaid() {
+            // given
+            Order order = OrderFixture.aPaidOrder();
+
+            // when & then
+            assertThatThrownBy(order::pay)
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT));
+        }
+    }
+
+    @Nested
+    @DisplayName("markPaymentFailed - 결제 실패 처리 시,")
+    class MarkPaymentFailed {
+
+        @Test
+        @DisplayName("결제대기 주문을 결제실패로 전이하고 라인·총액은 그대로 두며 결제 시각은 남기지 않는다")
+        void transitionsToPaymentFailedKeepingLinesAndAmount() {
+            // given
+            Order order = OrderFixture.aConfirmedOrder();
+            Money expectedTotal = Money.of(
+                    ProductFixture.DEFAULT_PRICE.getAmount() * OrderFixture.DEFAULT_QUANTITY);
+
+            // when
+            order.markPaymentFailed();
+
+            // then
+            assertAll(
+                    () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED),
+                    () -> assertThat(order.getLines()).hasSize(1),
+                    () -> assertThat(order.getTotalAmount()).isEqualTo(expectedTotal),
+                    () -> assertThat(order.getPaidAt()).isNull()
+            );
+        }
+
+        @Test
+        @DisplayName("접수만 된 주문은 결제 실패 처리할 수 없고 CONFLICT 예외가 발생한다")
+        void throwsConflict_whenOrderIsPending() {
+            // given
+            Order order = OrderFixture.aDraftedOrder();
+
+            // when & then
+            assertThatThrownBy(order::markPaymentFailed)
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT));
+        }
+    }
+
+    @Nested
     @DisplayName("isOwnedBy - 소유권 확인 시,")
     class IsOwnedBy {
 

@@ -27,6 +27,13 @@ public class OrderFixture {
         return order;
     }
 
+    public static Order aPaidOrder() {
+        Order order = aConfirmedOrder();
+
+        order.pay();
+        return order;
+    }
+
     public static Order aFailedOrder() {
         Order order = aDraftedOrder();
 

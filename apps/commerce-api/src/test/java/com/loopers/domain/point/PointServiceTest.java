@@ -17,6 +17,7 @@ import static com.loopers.domain.point.PointFixture.*;
 import static com.loopers.domain.point.PointFixture.aChargeCommand;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -137,6 +138,63 @@ class PointServiceTest {
             PointServiceDto.RetrieveCommand command = aRetrieveCommand(DEFAULT_MEMBER_ID);
 
             assertThatThrownBy(() -> pointService.retrieve(command))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
+        }
+    }
+
+    @Nested
+    @DisplayName("use")
+    class Use {
+
+        @Test
+        @DisplayName("잔액이 충분하면 사용 금액만큼 차감한다")
+        void decreasesBalance_whenBalanceIsEnough() {
+            // given
+            Long initialBalance = 10_000L;
+            Long useAmount = 3_000L;
+            Point point = aPointWithBalance(initialBalance);
+            when(pointRepository.findByMemberId(DEFAULT_MEMBER_ID)).thenReturn(Optional.of(point));
+
+            // when
+            pointService.use(new PointServiceDto.UseCommand(DEFAULT_MEMBER_ID, Money.of(useAmount)));
+
+            // then
+            assertThat(point.getBalance()).isEqualTo(Money.of(initialBalance - useAmount));
+        }
+
+        @Test
+        @DisplayName("잔액이 부족하면 CONFLICT 예외가 발생하고 잔액은 그대로 남는다")
+        void throwsConflict_whenBalanceIsNotEnough() {
+            // given
+            Long initialBalance = 1_000L;
+            Long useAmount = 1_001L;
+            Point point = aPointWithBalance(initialBalance);
+            PointServiceDto.UseCommand command =
+                    new PointServiceDto.UseCommand(DEFAULT_MEMBER_ID, Money.of(useAmount));
+            when(pointRepository.findByMemberId(DEFAULT_MEMBER_ID)).thenReturn(Optional.of(point));
+
+            // when
+            Throwable thrown = catchThrowable(() -> pointService.use(command));
+
+            // then
+            assertAll(
+                    () -> assertThat(thrown).isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT)),
+                    () -> assertThat(point.getBalance()).isEqualTo(Money.of(initialBalance))
+            );
+        }
+
+        @Test
+        @DisplayName("해당 사용자에 대한 Point가 존재하지 않으면 NOT_FOUND 예외가 발생한다")
+        void throwsNotFound_whenPointDoesNotExist() {
+            // given
+            PointServiceDto.UseCommand command =
+                    new PointServiceDto.UseCommand(DEFAULT_MEMBER_ID, Money.of(1_000L));
+            when(pointRepository.findByMemberId(DEFAULT_MEMBER_ID)).thenReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> pointService.use(command))
                     .isInstanceOfSatisfying(CoreException.class, e ->
                             assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
         }

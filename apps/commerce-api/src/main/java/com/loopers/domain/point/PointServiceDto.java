@@ -15,6 +15,12 @@ public class PointServiceDto {
         }
     }
 
+    public record UseCommand(
+            Long memberId,
+            Money amount
+    ) {
+    }
+
     public record ChargeQuery(
             Long memberId,
             Long amount,

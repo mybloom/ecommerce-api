@@ -373,6 +373,54 @@ private int findStockOf(Product product) { ... }
 - 헬퍼 호출 결과는 [위 규칙](#테스트-메서드-구조)대로 **변수로 받는다.**
     `find~`가 "읽어온다"를 말하면, 변수 이름이 "읽어온 그 값이 무엇인지"를 말한다
 
+### then 블록은 Repository 로 읽는다
+
+`find~` 헬퍼가 상태를 읽을 때는 **Repository를 쓴다.** 도메인 서비스나 UseCase를 거치지 않는다.
+
+단언과 저장된 데이터 사이에 프로덕션 조회 로직이 끼면 두 가지가 생긴다. 조회 쪽 버그로 테스트가
+엉뚱한 이유로 깨지고, 더 나쁘게는 **조회 버그와 쓰기 버그가 서로 상쇄되어 초록불이 유지된다.**
+
+```java
+// ❌ 도메인 서비스를 거쳐 읽는다
+private Payment findPaymentOf(Long orderId) {
+    return paymentService.findByOrderId(new PaymentServiceDto.FindByOrderIdCommand(orderId));
+}
+
+// ✅ 조회 seam 인 Repository 로 읽는다
+private Payment findPaymentOf(Long orderId) {
+    return paymentRepository.findByOrderId(orderId).orElseThrow();
+}
+```
+
+**테스트가 읽을 곳이 없다고 프로덕션 API 를 만들지 않는다.** 도메인 서비스에 조회 메서드를 추가하기 전에
+**그 메서드의 호출자가 프로덕션에 있는지 확인한다.** 없다면 테스트를 위해 비즈니스 표면을 넓힌 것이다.
+읽을 경로가 정말 필요하면 Repository 에 둔다 — 그쪽이 조회 seam 이다.
+
+### 컨트롤러 슬라이스 테스트의 범위
+
+`*V1ControllerTest`(`@WebMvcTest` + `@MockitoBean`)는 **UseCase에 닿기 전에 스프링 MVC가 거절하는 것만**
+검증한다. 성공 케이스도, UseCase가 던진 예외의 상태 매핑도 넣지 않는다.
+**`when()`이 등장하면 선을 넘은 것이다.**
+
+| 여기서 검증한다 | 이유 |
+|---|---|
+| 필수 헤더 누락 | 컨트롤러 진입 전에 스프링 MVC가 거절한다. 목이 개입할 여지가 없다 |
+| PathVariable 타입 변환 실패 | 위와 같다 |
+| `@Valid` 위반 (블랭크, `@Min`, `@NotNull` 등) | 위와 같다 |
+| 요청 본문 파싱 실패 (enum에 없는 값 등) | 위와 같다 |
+
+| 여기서 검증하지 않는다 | 왜 |
+|---|---|
+| 200 응답의 본문 필드 | `thenReturn`으로 답을 정해놓고 그 답을 확인하게 된다. 성공 경로는 E2E가 진짜 데이터로 본다 |
+| 재고 부족 → 409, 없는 상품 → 404 같은 **도메인 조건** | 그 조건은 DB까지 가야 성립한다. `thenThrow`로 흉내내면 실제로 검증되는 건 `ErrorType` → HTTP 매핑뿐인데 **테스트 이름은 재고를 검증한다고 말한다.** 이름이 거짓이 되고 진짜 커버리지는 E2E에만 남는다 |
+| 응답에 내부 식별자가 없는지 | 응답 record의 필드 목록이라 타입이 이미 말한다 (아래) |
+
+> **타입이 이미 말하는 것은 테스트하지 않는다.** 응답 record에 `id` 필드가 없다는 사실은 컴파일 타임에
+> 고정되어 있다. 금지된 이름을 열거해야 성립하는 단언(`doesNotContain("\"id\"")` 류)은 가드가 아니라
+> 갱신되지 않는 체크리스트다 — 빠뜨린 이름만큼 조용히 통과한다.
+
+> `PointV1ControllerTest`가 기준이다. `@MockitoBean`만 선언하고 `when()`을 한 번도 쓰지 않는다.
+
 ### Repository 테스트 작성 기준
 
 - ❌ **테스트 작성 금지**: Spring Data JPA가 메서드명으로 자동 생성하는 쿼리

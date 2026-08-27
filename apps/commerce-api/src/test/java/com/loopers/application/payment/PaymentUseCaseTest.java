@@ -25,7 +25,6 @@ import com.loopers.support.fixture.MemberFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -49,7 +48,6 @@ import static org.junit.jupiter.api.Assertions.assertAll;
  * E2E(PaymentV1ApiE2ETest)가 이미 보는 것 — HTTP 상태, 주문 상태, 포인트 잔액, 재고 복원 — 은 여기서 되풀이하지 않는다.
  * 이 테스트는 <b>E2E가 볼 수 없는 것</b>만 담는다: 결제 애그리거트의 최종 상태와 동시성.
  */
-@Disabled("도메인·인프라가 아직 스켈레톤이다 — 봉합 단계에서 켠다")
 @SpringBootTest
 class PaymentUseCaseTest {
 

@@ -203,7 +203,8 @@ class PaymentV1ApiE2ETest {
         @DisplayName("다른 회원의 주문을 결제하면 404를 반환하고 그 주문은 결제대기로 남는다")
         void returnsNotFound_whenOrderBelongsToAnotherMember() {
             // given
-            Member otherMember = memberRepository.save(MemberFixture.aMemberWithLoginId("otherUser"));
+            Member otherMember = memberRepository.save(
+                    MemberFixture.aMemberWithLoginIdAndEmail("otherUser", "other@test.com"));
             aChargedPoint(otherMember.getId(), ORDER_AMOUNT);
             String orderNumberOfOwner = anAwaitingPaymentOrderNumber(member.getId());
 

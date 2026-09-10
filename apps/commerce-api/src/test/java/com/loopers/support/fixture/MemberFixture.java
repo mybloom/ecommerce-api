@@ -117,6 +117,19 @@ public class MemberFixture {
         return Member.register(aRegisterCommandWithLoginId(loginId), PASSWORD_ENCODER);
     }
 
+    public static Member aMemberWithLoginIdAndEmail(String loginId, String email) {
+        return Member.register(
+                new MemberServiceDto.RegisterCommand(
+                        loginId,
+                        email,
+                        DEFAULT_BIRTH_DATE,
+                        DEFAULT_SERVICE_GENDER,
+                        DEFAULT_PASSWORD
+                ),
+                PASSWORD_ENCODER
+        );
+    }
+
     // Member 엔티티 생성(JPA 저장된 상태)
     public static Member aSavedMember(Long id) {
         Member member = aMember();

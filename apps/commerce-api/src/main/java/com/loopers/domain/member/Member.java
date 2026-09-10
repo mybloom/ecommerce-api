@@ -24,14 +24,17 @@ public class Member extends BaseEntity {
     private String loginId;
 
     @Embedded
-    @Column(name = "email", nullable = false, unique = true)
+    @AttributeOverride(name = "address", column = @Column(name = "email", nullable = false, unique = true))
     private Email email;
 
     @Column(nullable = false)
     private LocalDate birthDate;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private Gender gender;
 
+    @Column(nullable = false)
     private String passwordHash;
 
     public static Member register(MemberServiceDto.RegisterCommand command, PasswordEncoder passwordEncoder) {

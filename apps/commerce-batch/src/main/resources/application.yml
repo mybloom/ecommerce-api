@@ -13,7 +13,7 @@ spring:
       - monitoring.yml
   batch:
     job:
-      name: ${job.name:NONE}
+      name: ${job.name:}
     jdbc:
       initialize-schema: never
 

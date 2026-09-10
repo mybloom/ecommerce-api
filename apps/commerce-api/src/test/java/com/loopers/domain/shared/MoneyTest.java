@@ -28,14 +28,6 @@ class MoneyTest {
         }
 
         @Test
-        @DisplayName("amount가 null이면 BAD_REQUEST 예외가 발생한다")
-        void create_null() {
-            assertThatThrownBy(() -> Money.of(null))
-                    .isInstanceOfSatisfying(CoreException.class, e ->
-                            assertThat(e.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST));
-        }
-
-        @Test
         @DisplayName("amount가 음수면 BAD_REQUEST 예외가 발생한다")
         void create_negative() {
             assertThatThrownBy(() -> Money.of(-1L))

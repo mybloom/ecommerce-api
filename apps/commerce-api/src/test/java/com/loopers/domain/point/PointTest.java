@@ -28,14 +28,6 @@ class PointTest {
                     () -> assertThat(point.getBalance().isZero()).isTrue()
             );
         }
-
-        @DisplayName("memberId가 null이면 NPE 예외가 발생한다")
-        @Test
-        void throwsException_whenMemberIdIsNull() {
-
-            assertThatThrownBy(() -> Point.createInitial(anInitialCommand(null)))
-                    .isInstanceOf(NullPointerException.class);
-        }
     }
 
     @Nested

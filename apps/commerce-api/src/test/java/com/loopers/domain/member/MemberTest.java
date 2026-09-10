@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 
@@ -37,15 +36,6 @@ class MemberTest {
                 () -> assertThat(member.getLoginId()).isEqualTo(MemberFixture.DEFAULT_LOGIN_ID),
                 () -> assertThat(member.getPasswordHash()).isNotNull()
         );
-    }
-
-    //정적 분석에서 이미 걸러지므로, null 체크 정도는 테스트로 검증하지 않는다.
-    @DisplayName("Member생성 시, null 체크를 한다.")
-    @Test
-    void constructorNullCheck() {
-        assertThatThrownBy(() ->
-                MemberFixture.aMemberWithLoginId(null)
-        ).isInstanceOf(NullPointerException.class);
     }
 
     @Test

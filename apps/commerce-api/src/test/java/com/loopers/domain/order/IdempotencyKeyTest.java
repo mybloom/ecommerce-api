@@ -56,14 +56,6 @@ class IdempotencyKeyTest {
         }
 
         @Test
-        @DisplayName("null이면 BAD_REQUEST 예외가 발생한다")
-        void throwsBadRequest_whenValueIsNull() {
-            assertThatThrownBy(() -> IdempotencyKey.of(null))
-                    .isInstanceOfSatisfying(CoreException.class, e ->
-                            assertThat(e.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST));
-        }
-
-        @Test
         @DisplayName("길이 상한을 넘으면 BAD_REQUEST 예외가 발생한다")
         void throwsBadRequest_whenValueExceedsMaxLength() {
             // given

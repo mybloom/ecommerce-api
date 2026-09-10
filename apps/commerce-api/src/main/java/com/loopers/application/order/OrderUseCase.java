@@ -62,8 +62,20 @@ public class OrderUseCase {
         try {
             return orderProcessor.confirm(drafted.getId(), info.items());
         } catch (RuntimeException e) {
-            orderProcessor.markOrderFailed(drafted.getId());
+            markOrderFailedPreservingCause(drafted.getId(), e);
             throw e;
+        }
+    }
+
+    /**
+     * T3가 실패해도 <b>원래 예외를 덮지 않는다.</b> 실패는 suppressed로 매달아 함께 올린다.
+     * 덮이면 주문이 왜 확정되지 못했는지가 사라지고, T3 롤백으로 DB에도 흔적이 남지 않는다.
+     */
+    private void markOrderFailedPreservingCause(Long orderId, RuntimeException cause) {
+        try {
+            orderProcessor.markOrderFailed(orderId);
+        } catch (RuntimeException compensationFailure) {
+            cause.addSuppressed(compensationFailure);
         }
     }
 }

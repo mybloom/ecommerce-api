@@ -21,6 +21,8 @@ import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductFixture;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.shared.Money;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import com.loopers.support.fixture.MemberFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -126,6 +128,16 @@ class PaymentUseCaseTest {
         return paymentRepository.findByOrderId(order.getId()).orElseThrow();
     }
 
+    /**
+     * 주문 확정 뒤 상품이 내려간 상황. 재고 복원이 retrieveForUpdate에서 막힌다.
+     */
+    private void aHiddenProduct() {
+        Product hidden = productRepository.findById(product.getId()).orElseThrow();
+        hidden.hide();
+
+        productRepository.save(hidden);
+    }
+
     private Long findBalance() {
         return pointRepository.findByMemberId(member.getId()).orElseThrow().getBalance().getAmount();
     }
@@ -176,6 +188,33 @@ class PaymentUseCaseTest {
                     () -> assertThat(failedPayment.getStatus()).isEqualTo(PaymentStatus.FAILED),
                     () -> assertThat(failedPayment.getFailureReason()).isNotBlank(),
                     () -> assertThat(failedPayment.getApprovedAt()).isNull()
+            );
+        }
+    }
+
+    @Nested
+    @DisplayName("pay - 보상이 실패할 때")
+    class CompensationFailure {
+
+        @Test
+        @DisplayName("재고 복원이 실패해도 결제 실패의 원래 원인이 전파되고 보상 실패는 suppressed로 함께 남는다")
+        void propagatesOriginalCause_whenStockRestoreFails() {
+            // given
+            Long insufficientBalance = ORDER_AMOUNT - 1L;
+            aChargedPoint(insufficientBalance);
+            String orderNumber = anAwaitingPaymentOrderNumber();
+
+            aHiddenProduct();
+
+            // when
+            Throwable thrown = catchThrowable(() -> paymentUseCase.pay(aPayInfo(orderNumber)));
+
+            // then
+            assertAll(
+                    () -> assertThat(thrown).isInstanceOf(CoreException.class),
+                    () -> assertThat(((CoreException) thrown).getErrorType()).isEqualTo(ErrorType.CONFLICT),
+                    () -> assertThat(thrown.getSuppressed()).hasSize(1),
+                    () -> assertThat(thrown.getSuppressed()[0]).isInstanceOf(CoreException.class)
             );
         }
     }

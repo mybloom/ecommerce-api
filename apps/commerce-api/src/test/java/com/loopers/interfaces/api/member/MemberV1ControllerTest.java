@@ -61,6 +61,23 @@ class MemberV1ControllerTest {
         }
 
         @Test
+        @DisplayName("회원가입 요청의 성별이 enum 에 없는 값이면 400 Bad Request")
+        void register_validation_invalid_gender() throws Exception {
+            // given
+            String invalidGender = "X";
+            String requestBody = """
+                    {"loginId":"testUser","email":"test@test.com","birthDate":"1990-01-01",
+                     "gender":"%s","password":"secret"}
+                    """.formatted(invalidGender);
+
+            // when & then
+            mockMvc.perform(post("/api/v1/members")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(requestBody))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
         @DisplayName("회원가입 요청 비밀번호가 4자 미만이면 400 Bad Request")
         void register_validation_short_password() throws Exception {
             MemberV1Dto.RegisterRequest invalidRequest = MemberFixture.aRegisterRequestWithPassword("pwd");

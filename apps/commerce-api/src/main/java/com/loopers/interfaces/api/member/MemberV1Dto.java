@@ -13,14 +13,14 @@ public class MemberV1Dto {
             @NotBlank @Size(min = 3, max = 15) String loginId,
             @NotBlank @Email String email,
             @NotNull LocalDate birthDate,
-            @NotBlank String gender,
+            @NotNull MemberUseCaseDto.Gender gender,
             @NotBlank @Size(min = 4, max = 50) String password) {
         public MemberUseCaseDto.RegisterInfo toInfo() {
             return new MemberUseCaseDto.RegisterInfo(
                     this.loginId,
                     this.email,
                     this.birthDate,
-                    MemberUseCaseDto.Gender.valueOf(gender),
+                    gender,
                     password
             );
         }

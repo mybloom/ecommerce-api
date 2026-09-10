@@ -1,3 +1,5 @@
+import net.ltgt.gradle.errorprone.CheckSeverity
+import net.ltgt.gradle.errorprone.errorprone
 import org.gradle.api.Project.DEFAULT_VERSION
 import org.springframework.boot.gradle.tasks.bundling.BootJar
 
@@ -15,6 +17,7 @@ plugins {
     java
     id("org.springframework.boot") apply false
     id("io.spring.dependency-management")
+    id("net.ltgt.errorprone") version "4.1.0" apply false
 }
 
 java {
@@ -38,6 +41,7 @@ subprojects {
     apply(plugin = "org.springframework.boot")
     apply(plugin = "io.spring.dependency-management")
     apply(plugin = "jacoco")
+    apply(plugin = "net.ltgt.errorprone")
 
     dependencyManagement {
         imports {
@@ -56,6 +60,10 @@ subprojects {
         // Lombok
         implementation("org.projectlombok:lombok")
         annotationProcessor("org.projectlombok:lombok")
+        // Null 안전성 (docs/decisions/0001)
+        implementation("org.jspecify:jspecify:${project.properties["jspecifyVersion"]}")
+        "errorprone"("com.google.errorprone:error_prone_core:${project.properties["errorProneVersion"]}")
+        "errorprone"("com.uber.nullaway:nullaway:${project.properties["nullAwayVersion"]}")
         // Test
         testRuntimeOnly("org.junit.platform:junit-platform-launcher")
         // testcontainers:mysql 이 jdbc 사용함
@@ -76,6 +84,34 @@ subprojects {
     configure(allprojects.filter { it.parent?.name.equals("apps") }) {
         tasks.withType(Jar::class) { enabled = false }
         tasks.withType(BootJar::class) { enabled = true }
+    }
+
+    tasks.withType<JavaCompile>().configureEach {
+        options.errorprone {
+            // NullAway 만 켠다. Error Prone 의 나머지 검사는 이번 결정의 범위가 아니다.
+            disableAllChecks = true
+            check("NullAway", CheckSeverity.ERROR)
+            // 생성 소스(QueryDSL Q 클래스)는 고칠 소스가 없고,
+            // 테스트는 일부러 null 을 넣거나 응답의 optional 필드를 바로 꺼내 쓰는 자리라 제외한다.
+            excludedPaths = ".*/build/generated/.*|.*/src/test/.*|.*/src/testFixtures/.*"
+            option("NullAway:AnnotatedPackages", "com.loopers")
+            // 프레임워크가 리플렉션으로 채우는 필드 - 생성자에서 초기화되지 않아도 정상이다
+            option(
+                "NullAway:ExcludedFieldAnnotations",
+                "jakarta.persistence.Id," +
+                    "jakarta.persistence.Column," +
+                    "jakarta.persistence.Embedded," +
+                    "jakarta.persistence.Enumerated," +
+                    "jakarta.persistence.OneToMany," +
+                    "jakarta.persistence.GeneratedValue," +
+                    "jakarta.persistence.PersistenceContext," +
+                    "org.springframework.beans.factory.annotation.Autowired," +
+                    "org.springframework.beans.factory.annotation.Value," +
+                    "org.springframework.test.context.bean.override.mockito.MockitoBean," +
+                    "org.springframework.test.context.bean.override.mockito.MockitoSpyBean," +
+                    "org.mockito.Mock",
+            )
+        }
     }
 
     tasks.test {

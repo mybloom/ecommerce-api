@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 import java.time.ZonedDateTime;
+import org.jspecify.annotations.Nullable;
 
 public class PaymentV1Dto {
 
@@ -30,8 +31,8 @@ public class PaymentV1Dto {
             PaymentMethod method,
             PaymentStatus status,
             Long amount,
-            ZonedDateTime approvedAt,
-            String failureReason
+            @Nullable ZonedDateTime approvedAt,
+            @Nullable String failureReason
     ) {
         public static PayResponse from(PaymentUseCaseDto.PayResult result) {
             return new PayResponse(

@@ -1,7 +1,9 @@
 package com.loopers.interfaces.api;
 
-public record ApiResponse<T>(Metadata meta, T data) {
-    public record Metadata(Result result, String errorCode, String message) {
+import org.jspecify.annotations.Nullable;
+
+public record ApiResponse<T>(Metadata meta, @Nullable T data) {
+    public record Metadata(Result result, @Nullable String errorCode, @Nullable String message) {
         public enum Result {
             SUCCESS, FAIL
         }

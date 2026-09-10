@@ -9,6 +9,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import lombok.Getter;
 import java.time.ZonedDateTime;
+import org.jspecify.annotations.Nullable;
 
 /**
  * 생성/수정/삭제 정보를 자동으로 관리해준다.
@@ -28,6 +29,7 @@ public abstract class BaseEntity {
     @Column(name = "updated_at", nullable = false)
     private ZonedDateTime updatedAt;
 
+    @Nullable
     @Column(name = "deleted_at")
     private ZonedDateTime deletedAt;
 

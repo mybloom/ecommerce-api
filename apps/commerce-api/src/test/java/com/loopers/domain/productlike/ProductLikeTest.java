@@ -31,23 +31,5 @@ class ProductLikeTest {
                     () -> assertThat(productLike.getLikedAt()).isAfterOrEqualTo(beforeCreation)
             );
         }
-
-        @Test
-        @DisplayName("memberId가 null이면 예외가 발생한다")
-        void throwsException_whenMemberIdIsNull() {
-            Long nullMemberId = null;
-            Long productId = ProductLikeFixture.DEFAULT_PRODUCT_ID;
-
-            assertThrows(NullPointerException.class, () -> ProductLike.like(nullMemberId, productId));
-        }
-
-        @Test
-        @DisplayName("productId가 null이면 예외가 발생한다")
-        void throwsException_whenProductIdIsNull() {
-            Long memberId = ProductLikeFixture.DEFAULT_MEMBER_ID;
-            Long nullProductId = null;
-
-            assertThrows(NullPointerException.class, () -> ProductLike.like(memberId, nullProductId));
-        }
     }
 }

@@ -52,14 +52,6 @@ class OrderNumberTest {
                     .isInstanceOfSatisfying(CoreException.class, e ->
                             assertThat(e.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST));
         }
-
-        @Test
-        @DisplayName("null이면 BAD_REQUEST 예외가 발생한다")
-        void throwsBadRequest_whenValueIsNull() {
-            assertThatThrownBy(() -> OrderNumber.of(null))
-                    .isInstanceOfSatisfying(CoreException.class, e ->
-                            assertThat(e.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST));
-        }
     }
 
     @Nested

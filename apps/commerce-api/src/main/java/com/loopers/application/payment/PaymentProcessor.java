@@ -104,7 +104,7 @@ public class PaymentProcessor {
      */
     private void restoreStock(Order order) {
         for (OrderLine line : order.getLines()) {
-            Product product = productService.retrieveForUpdate(
+            Product product = productService.retrieveForRestore(
                     new ProductServiceDto.RetrieveCommand(line.getProductId()));
             product.increaseStock(line.getQuantity());
         }

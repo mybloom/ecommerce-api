@@ -86,6 +86,56 @@ class ProductServiceTest {
     }
 
     @Nested
+    @DisplayName("retrieveForRestore")
+    class RetrieveForRestore {
+
+        @Test
+        @DisplayName("OFF_SALE 상품도 반환한다")
+        void returnsProduct_whenProductIsOffSale() {
+            // given
+            Long productId = ProductFixture.DEFAULT_PRODUCT_ID;
+            Product product = ProductFixture.aSavedProductWithStatus(productId, ProductStatus.OFF_SALE);
+            when(productRepository.findByIdForUpdate(productId)).thenReturn(Optional.of(product));
+
+            // when
+            Product result = productService.retrieveForRestore(new ProductServiceDto.RetrieveCommand(productId));
+
+            // then
+            assertThat(result.getId()).isEqualTo(productId);
+        }
+
+        @Test
+        @DisplayName("HIDDEN 상품도 반환한다")
+        void returnsProduct_whenProductIsHidden() {
+            // given
+            Long productId = ProductFixture.DEFAULT_PRODUCT_ID;
+            Product product = ProductFixture.aSavedProductWithStatus(productId, ProductStatus.HIDDEN);
+            when(productRepository.findByIdForUpdate(productId)).thenReturn(Optional.of(product));
+
+            // when
+            Product result = productService.retrieveForRestore(new ProductServiceDto.RetrieveCommand(productId));
+
+            // then
+            assertThat(result.getId()).isEqualTo(productId);
+        }
+
+        @Test
+        @DisplayName("상품이 존재하지 않으면 NOT_FOUND 예외가 발생한다")
+        void throwsNotFound_whenProductDoesNotExist() {
+            // given
+            Long productId = ProductFixture.DEFAULT_PRODUCT_ID;
+            when(productRepository.findByIdForUpdate(productId)).thenReturn(Optional.empty());
+
+            // when
+            CoreException thrown = assertThrows(CoreException.class,
+                    () -> productService.retrieveForRestore(new ProductServiceDto.RetrieveCommand(productId)));
+
+            // then
+            assertThat(thrown.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+    }
+
+    @Nested
     @DisplayName("increaseLikeCount")
     class IncreaseLikeCount {
 

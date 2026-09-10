@@ -1,29 +1,33 @@
 package com.loopers.application.member;
 
-import com.loopers.domain.member.MemberProfile;
-import com.loopers.domain.point.PointService;
-import com.loopers.domain.point.PointServiceDto;
 import com.loopers.domain.member.Member;
+import com.loopers.domain.member.MemberProfile;
 import com.loopers.domain.member.MemberService;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 
 @RequiredArgsConstructor
 @Component
 public class MemberUseCase {
 
+    private final MemberProcessor memberProcessor;
     private final MemberService memberService;
-    private final PointService pointService;
 
-    @Transactional
+    /**
+     * 트랜잭션을 걸지 않는다. loginId·email UNIQUE 위반은 트랜잭션 안에서 잡을 수 없어
+     * 밖인 여기서 409로 바꾼다.
+     */
     public MemberUseCaseDto.RegisterResult register(MemberUseCaseDto.RegisterInfo info) {
-        Member member = memberService.register(info.toCommand());
-
-        pointService.createInitialPoint(new PointServiceDto.CreateInitialCommand(member.getId()));
-
-        return MemberUseCaseDto.RegisterResult.from(member);
+        try {
+            Member member = memberProcessor.register(info);
+            return MemberUseCaseDto.RegisterResult.from(member);
+        } catch (DataIntegrityViolationException e) {
+            throw new CoreException(ErrorType.CONFLICT, "이미 사용 중인 로그인 ID 또는 이메일입니다.");
+        }
     }
 
     public MemberUseCaseDto.GetMemberProfileResult getMemberProfile(MemberUseCaseDto.GetMemberProfileInfo info) {

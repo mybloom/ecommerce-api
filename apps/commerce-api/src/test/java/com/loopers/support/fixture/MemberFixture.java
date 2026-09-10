@@ -73,6 +73,16 @@ public class MemberFixture {
         );
     }
 
+    public static MemberUseCaseDto.RegisterInfo aRegisterInfoWith(String loginId, String email) {
+        return new MemberUseCaseDto.RegisterInfo(
+                loginId,
+                email,
+                DEFAULT_BIRTH_DATE,
+                DEFAULT_USECASE_GENDER,
+                DEFAULT_PASSWORD
+        );
+    }
+
     // MemberServiceDto.CreateCommand 생성
     public static MemberServiceDto.RegisterCommand aRegisterCommand() {
         return new MemberServiceDto.RegisterCommand(

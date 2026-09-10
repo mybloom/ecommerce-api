@@ -17,6 +17,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -114,6 +122,53 @@ class MemberUseCaseTest {
             assertAll(
                     () -> assertThat(result.id()).isEqualTo(savedMember.getId()),
                     () -> assertThat(result.loginId()).isEqualTo(savedMember.getLoginId())
+            );
+        }
+    }
+
+    @Nested
+    @DisplayName("같은 이메일로 동시에 가입할 때,")
+    class ConcurrentRegister {
+
+        @Test
+        @DisplayName("한 건만 저장되고 나머지는 CONFLICT 예외가 발생한다")
+        void registersOnlyOne_whenSameEmailIsUsedConcurrently() throws InterruptedException {
+            // given
+            String sharedEmail = "race@test.com";
+            int concurrentRequestCount = 2;
+
+            List<Throwable> failures = Collections.synchronizedList(new ArrayList<>());
+            CountDownLatch startLatch = new CountDownLatch(1);
+            CountDownLatch doneLatch = new CountDownLatch(concurrentRequestCount);
+            ExecutorService executor = Executors.newFixedThreadPool(concurrentRequestCount);
+
+            // when
+            for (int i = 0; i < concurrentRequestCount; i++) {
+                String loginId = "racer" + i;
+                executor.submit(() -> {
+                    try {
+                        startLatch.await();
+                        memberUseCase.register(MemberFixture.aRegisterInfoWith(loginId, sharedEmail));
+                    } catch (Throwable t) {
+                        failures.add(t);
+                    } finally {
+                        doneLatch.countDown();
+                    }
+                });
+            }
+            startLatch.countDown();
+            doneLatch.await(20, TimeUnit.SECONDS);
+            executor.shutdown();
+
+            // then
+            long savedCount = memberRepository.existsByEmail(sharedEmail) ? 1 : 0;
+
+            assertAll(
+                    () -> assertThat(savedCount).isEqualTo(1),
+                    () -> assertThat(failures).hasSize(1),
+                    () -> assertThat(failures.get(0))
+                            .isInstanceOfSatisfying(CoreException.class, e ->
+                                    assertThat(e.getErrorType()).isEqualTo(ErrorType.CONFLICT))
             );
         }
     }

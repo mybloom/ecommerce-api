@@ -8,5 +8,7 @@ public interface MemberRepository {
 
     boolean existsByLoginId(String loginId);
 
+    boolean existsByEmail(String email);
+
     Optional<Member> findById(Long id);
 }

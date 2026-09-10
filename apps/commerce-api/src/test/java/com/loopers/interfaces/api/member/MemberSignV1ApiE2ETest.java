@@ -61,6 +61,35 @@ class MemberSignV1ApiE2ETest {
         );
     }
 
+    @DisplayName("이미 가입된 이메일로 회원 가입 시, 409 Conflict 응답을 반환하고 회원은 늘어나지 않는다.")
+    @Test
+    void returnConflict_whenEmailIsAlreadyRegistered() {
+        // given
+        memberRepository.save(MemberFixture.aMemberWithEmail(MemberFixture.DEFAULT_EMAIL));
+
+        String otherLoginId = "otherUser";
+        MemberV1Dto.RegisterRequest request = MemberFixture.aRegisterRequestWithLoginId(otherLoginId);
+        ParameterizedTypeReference<ApiResponse<MemberV1Dto.RegisterResponse>> responseType = new ParameterizedTypeReference<>() {
+        };
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<MemberV1Dto.RegisterRequest> httpEntity = new HttpEntity<>(request, headers);
+
+        // when
+        ResponseEntity<ApiResponse<MemberV1Dto.RegisterResponse>> response =
+                testRestTemplate.exchange(ENDPOINT, HttpMethod.POST, httpEntity, responseType);
+
+        // then
+        boolean otherLoginIdRegistered = memberRepository.existsByLoginId(otherLoginId);
+
+        assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT),
+                () -> assertThat(response.getBody().meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
+                () -> assertThat(response.getBody().data()).isNull(),
+                () -> assertThat(otherLoginIdRegistered).isFalse()
+        );
+    }
+
     @DisplayName("회원 가입 시에 유효하지 않는 loginId일 경우, 400 Bad Request 응답을 반환한다.")
     @Test
     void returnBadRequest_whenGenderIsMissing() {

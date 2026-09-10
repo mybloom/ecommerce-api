@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -40,6 +41,7 @@ class MemberServiceTest {
             MemberServiceDto.RegisterCommand command = MemberFixture.aRegisterCommandWithLoginId(loginId);
 
             when(memberRepository.existsByLoginId(loginId)).thenReturn(false);
+            when(memberRepository.existsByEmail(command.email())).thenReturn(false);
             when(passwordEncoder.encode(anyString())).thenReturn("ENCODED_PASSWORD");
             when(memberRepository.save(any(Member.class))).thenAnswer(invocationOnMock -> invocationOnMock.getArgument(0));
 
@@ -47,6 +49,26 @@ class MemberServiceTest {
 
             verify(memberRepository).save(any(Member.class));
             assertThat(member.getLoginId()).isEqualTo(loginId);
+        }
+
+        @DisplayName("이미 존재하는 이메일로 회원 등록 시, CONFLICT 예외가 발생하고 저장은 수행되지 않는다.")
+        @Test
+        void throwException_whenEmailIsAlreadyExist() {
+            // given
+            String duplicateEmail = "dup@test.com";
+            MemberServiceDto.RegisterCommand command = MemberFixture.aRegisterCommandWithEmail(duplicateEmail);
+
+            when(memberRepository.existsByLoginId(command.loginId())).thenReturn(false);
+            when(memberRepository.existsByEmail(duplicateEmail)).thenReturn(true);
+
+            // when
+            CoreException exception = assertThrows(CoreException.class, () -> memberService.register(command));
+
+            // then
+            assertAll(
+                    () -> assertThat(exception.getErrorType()).isEqualTo(ErrorType.CONFLICT),
+                    () -> verify(memberRepository, never()).save(any(Member.class))
+            );
         }
 
         @DisplayName("이미 존재하는 로그인 ID 로 회원 등록 시, CONFLICT 예외가 발생한다.")

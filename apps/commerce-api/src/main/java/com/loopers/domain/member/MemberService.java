@@ -18,6 +18,10 @@ public class MemberService {
             throw new CoreException(ErrorType.CONFLICT, "이미 존재하는 사용자입니다.");
         }
 
+        if (memberRepository.existsByEmail(command.email())) {
+            throw new CoreException(ErrorType.CONFLICT, "이미 존재하는 이메일입니다.");
+        }
+
         Member member = memberRepository.save(Member.register(command, passwordEncoder));
 
         return member;

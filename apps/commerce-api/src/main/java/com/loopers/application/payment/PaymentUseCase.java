@@ -44,8 +44,23 @@ public class PaymentUseCase {
         try {
             return paymentProcessor.approve(accepted, info.memberId());
         } catch (CoreException e) {
-            paymentProcessor.markFailed(accepted, info.orderNumber(), e.getMessage());
+            markFailedPreservingCause(accepted, info.orderNumber(), e);
             throw e;
+        }
+    }
+
+    /**
+     * 보상(T2)이 실패해도 <b>원래 예외를 덮지 않는다.</b> 보상 실패는 suppressed로 매달아 함께 올린다.
+     * <p>
+     * T2는 트랜잭션이라 실패하면 통째로 롤백되어 결제는 PENDING, 재고는 그대로, 주문은 결제대기로 남는다.
+     * 그 상태에서 원래 예외까지 덮이면 <b>결제가 왜 실패했는지 되짚을 근거가 DB에도 로그에도 남지 않는다.</b>
+     * 재고 복원 대상 상품이 그 사이 내려가면(retrieveForUpdate가 NOT_FOUND) 실제로 밟는 경로다.
+     */
+    private void markFailedPreservingCause(Payment accepted, String orderNumber, CoreException cause) {
+        try {
+            paymentProcessor.markFailed(accepted, orderNumber, cause.getMessage());
+        } catch (RuntimeException compensationFailure) {
+            cause.addSuppressed(compensationFailure);
         }
     }
 }

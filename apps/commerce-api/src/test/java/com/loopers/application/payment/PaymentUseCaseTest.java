@@ -21,6 +21,8 @@ import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductFixture;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.shared.Money;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import com.loopers.support.fixture.MemberFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -43,6 +45,9 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * E2E(PaymentV1ApiE2ETest)가 이미 보는 것 — HTTP 상태, 주문 상태, 포인트 잔액, 재고 복원 — 은 여기서 되풀이하지 않는다.
@@ -126,6 +131,20 @@ class PaymentUseCaseTest {
         return paymentRepository.findByOrderId(order.getId()).orElseThrow();
     }
 
+    /**
+     * 주문 확정 뒤 상품이 내려간 상황. 재고 복원이 retrieveForUpdate에서 막힌다.
+     */
+    private void aHiddenProduct() {
+        Product hidden = productRepository.findById(product.getId()).orElseThrow();
+        hidden.hide();
+
+        productRepository.save(hidden);
+    }
+
+    private int findStock() {
+        return productRepository.findById(product.getId()).orElseThrow().getStockQuantity().getValue();
+    }
+
     private Long findBalance() {
         return pointRepository.findByMemberId(member.getId()).orElseThrow().getBalance().getAmount();
     }
@@ -176,6 +195,62 @@ class PaymentUseCaseTest {
                     () -> assertThat(failedPayment.getStatus()).isEqualTo(PaymentStatus.FAILED),
                     () -> assertThat(failedPayment.getFailureReason()).isNotBlank(),
                     () -> assertThat(failedPayment.getApprovedAt()).isNull()
+            );
+        }
+    }
+
+    @Nested
+    @DisplayName("pay - 결제 실패 보상")
+    class Compensation {
+
+        @Test
+        @DisplayName("결제가 실패하면 그 사이 상품이 내려갔어도 재고가 복원되고 결제는 FAILED로 남는다")
+        void restoresStock_whenProductBecameHidden() {
+            // given
+            Long insufficientBalance = ORDER_AMOUNT - 1L;
+            aChargedPoint(insufficientBalance);
+            String orderNumber = anAwaitingPaymentOrderNumber();
+
+            aHiddenProduct();
+
+            // when
+            Throwable thrown = catchThrowable(() -> paymentUseCase.pay(aPayInfo(orderNumber)));
+
+            // then
+            int expectedStock = ProductFixture.DEFAULT_STOCK.getValue();
+
+            assertAll(
+                    () -> assertThat(((CoreException) thrown).getErrorType()).isEqualTo(ErrorType.CONFLICT),
+                    () -> assertThat(findStock()).isEqualTo(expectedStock),
+                    () -> assertThat(findPaymentOf(orderNumber).getStatus()).isEqualTo(PaymentStatus.FAILED)
+            );
+        }
+
+        /**
+         * 보상이 실패하는 상황은 실제 스택으로 만들 수 없어(복원이 더 이상 상태를 보지 않는다)
+         * 여기서만 목을 쓴다. 검증 대상이 DB가 아니라 예외를 어디에 매다는지이므로 컨텍스트도 필요 없다.
+         */
+        @Test
+        @DisplayName("보상이 실패하면 결제 실패의 원래 원인이 전파되고 보상 실패는 suppressed로 함께 남는다")
+        void propagatesOriginalCause_whenCompensationFails() {
+            // given
+            CoreException approveFailure = new CoreException(ErrorType.CONFLICT, "잔액이 부족합니다.");
+            CoreException compensationFailure = new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
+
+            PaymentProcessor failingProcessor = mock(PaymentProcessor.class);
+            when(failingProcessor.accept(any())).thenReturn(mock(Payment.class));
+            when(failingProcessor.approve(any(), any())).thenThrow(approveFailure);
+            when(failingProcessor.markFailed(any(), any(), any())).thenThrow(compensationFailure);
+
+            PaymentUseCase useCase = new PaymentUseCase(failingProcessor);
+
+            // when
+            Throwable thrown = catchThrowable(() -> useCase.pay(aPayInfo("20260827-A3F9K2QP")));
+
+            // then
+            assertAll(
+                    () -> assertThat(thrown).isSameAs(approveFailure),
+                    () -> assertThat(thrown.getSuppressed()).containsExactly(compensationFailure)
             );
         }
     }

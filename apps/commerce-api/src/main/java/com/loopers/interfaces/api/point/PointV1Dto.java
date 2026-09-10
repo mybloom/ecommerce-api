@@ -2,9 +2,10 @@ package com.loopers.interfaces.api.point;
 
 import com.loopers.application.point.PointUseCaseDto;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 
 public class PointV1Dto {
-    public record ChargeRequest(@Min(1) Long amount) {
+    public record ChargeRequest(@NotNull @Min(1) Long amount) {
         public PointUseCaseDto.ChargeInfo toInfo(Long memberId) {
             return new PointUseCaseDto.ChargeInfo(memberId, amount);
         }

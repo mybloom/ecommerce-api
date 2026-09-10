@@ -80,18 +80,23 @@ class PointServiceTest {
         @Test
         @DisplayName("정상 충전 시 잔액이 증가한 결과를 반환한다")
         void returnsIncreasedBalance_whenChargeSucceeds() {
+            // given
             Long initialAmount = 1_000L;
+            Long chargeAmount = 500L;
+            Long expectedBalance = 1_500L;
+
             Point point = aPointWithBalance(initialAmount);
             when(pointRepository.findByMemberId(DEFAULT_MEMBER_ID))
                     .thenReturn(Optional.of(point));
-            Long chargeAmount = 500L;
 
+            // when
             PointServiceDto.ChargeQuery result = pointService.charge(aChargeCommand(DEFAULT_MEMBER_ID, Money.of(chargeAmount)));
 
+            // then
             assertAll(
                     () -> assertThat(result.memberId()).isEqualTo(DEFAULT_MEMBER_ID),
                     () -> assertThat(result.amount()).isEqualTo(chargeAmount),
-                    () -> assertThat(result.balance()).isEqualTo(initialAmount + chargeAmount)
+                    () -> assertThat(result.balance()).isEqualTo(expectedBalance)
             );
         }
 
@@ -153,6 +158,8 @@ class PointServiceTest {
             // given
             Long initialBalance = 10_000L;
             Long useAmount = 3_000L;
+            Money expectedBalance = Money.of(7_000L);
+
             Point point = aPointWithBalance(initialBalance);
             when(pointRepository.findByMemberId(DEFAULT_MEMBER_ID)).thenReturn(Optional.of(point));
 
@@ -160,7 +167,7 @@ class PointServiceTest {
             pointService.use(new PointServiceDto.UseCommand(DEFAULT_MEMBER_ID, Money.of(useAmount)));
 
             // then
-            assertThat(point.getBalance()).isEqualTo(Money.of(initialBalance - useAmount));
+            assertThat(point.getBalance()).isEqualTo(expectedBalance);
         }
 
         @Test

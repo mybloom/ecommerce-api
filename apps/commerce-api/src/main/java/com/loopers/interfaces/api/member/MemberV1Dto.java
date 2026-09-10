@@ -2,6 +2,7 @@ package com.loopers.interfaces.api.member;
 
 import com.loopers.application.member.MemberUseCaseDto;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -9,17 +10,17 @@ import java.time.LocalDate;
 
 public class MemberV1Dto {
     public record RegisterRequest(
-            @Size(min = 3, max = 15) String loginId,
-            @Email String email,
+            @NotBlank @Size(min = 3, max = 15) String loginId,
+            @NotBlank @Email String email,
             @NotNull LocalDate birthDate,
-            @NotNull String gender,
-            @Size(min = 4, max = 50) String password) {
+            @NotNull MemberUseCaseDto.Gender gender,
+            @NotBlank @Size(min = 4, max = 50) String password) {
         public MemberUseCaseDto.RegisterInfo toInfo() {
             return new MemberUseCaseDto.RegisterInfo(
                     this.loginId,
                     this.email,
                     this.birthDate,
-                    MemberUseCaseDto.Gender.valueOf(gender),
+                    gender,
                     password
             );
         }

@@ -27,7 +27,6 @@ public class MemberFixture {
     public static final String DEFAULT_EMAIL = "test@test.com";
     public static final String DEFAULT_PASSWORD = "secret";
     public static final LocalDate DEFAULT_BIRTH_DATE = LocalDate.of(1990, 1, 1);
-    public static final String DEFAULT_STRING_GENDER = "MALE";
     public static final MemberServiceDto.Gender DEFAULT_SERVICE_GENDER = MemberServiceDto.Gender.MALE;
     public static final MemberUseCaseDto.Gender DEFAULT_USECASE_GENDER = MemberUseCaseDto.Gender.MALE;
 
@@ -37,7 +36,7 @@ public class MemberFixture {
                 DEFAULT_LOGIN_ID,
                 DEFAULT_EMAIL,
                 DEFAULT_BIRTH_DATE,
-                DEFAULT_STRING_GENDER,
+                DEFAULT_USECASE_GENDER,
                 DEFAULT_PASSWORD
         );
     }
@@ -47,7 +46,17 @@ public class MemberFixture {
                 loginId,
                 DEFAULT_EMAIL,
                 DEFAULT_BIRTH_DATE,
-                DEFAULT_STRING_GENDER,
+                DEFAULT_USECASE_GENDER,
+                DEFAULT_PASSWORD
+        );
+    }
+
+    public static MemberV1Dto.RegisterRequest aRegisterRequestWithEmail(String email) {
+        return new MemberV1Dto.RegisterRequest(
+                DEFAULT_LOGIN_ID,
+                email,
+                DEFAULT_BIRTH_DATE,
+                DEFAULT_USECASE_GENDER,
                 DEFAULT_PASSWORD
         );
     }
@@ -57,7 +66,7 @@ public class MemberFixture {
                 DEFAULT_LOGIN_ID,
                 DEFAULT_EMAIL,
                 DEFAULT_BIRTH_DATE,
-                DEFAULT_STRING_GENDER,
+                DEFAULT_USECASE_GENDER,
                 password
         );
     }

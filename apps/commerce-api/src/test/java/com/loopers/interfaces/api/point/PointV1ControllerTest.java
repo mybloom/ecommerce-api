@@ -44,6 +44,21 @@ class PointV1ControllerTest {
                             .content(objectMapper.writeValueAsString(invalidRequest)))
                     .andExpect(status().isBadRequest());
         }
+
+        @Test
+        @DisplayName("충전 금액이 없으면 400을 응답한다")
+        void returns400_whenAmountIsNull() throws Exception {
+            // given
+            Long missingAmount = null;
+            PointV1Dto.ChargeRequest invalidRequest = new PointV1Dto.ChargeRequest(missingAmount);
+
+            // when & then
+            mockMvc.perform(post(ENDPOINT)
+                            .header("X-MEMBER-ID", 1L)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(invalidRequest)))
+                    .andExpect(status().isBadRequest());
+        }
     }
 
     @Nested

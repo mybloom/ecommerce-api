@@ -5,6 +5,7 @@ import com.loopers.domain.payment.PaymentMethod;
 import com.loopers.domain.payment.PaymentStatus;
 
 import java.time.ZonedDateTime;
+import org.jspecify.annotations.Nullable;
 
 public class PaymentUseCaseDto {
 
@@ -22,8 +23,8 @@ public class PaymentUseCaseDto {
             PaymentMethod method,
             PaymentStatus status,
             Long amount,
-            ZonedDateTime approvedAt,
-            String failureReason
+            @Nullable ZonedDateTime approvedAt,
+            @Nullable String failureReason
     ) {
         public static PayResult from(String orderNumber, Payment payment) {
             return new PayResult(

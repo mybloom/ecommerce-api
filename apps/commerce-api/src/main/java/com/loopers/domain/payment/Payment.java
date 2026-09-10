@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 import java.time.ZonedDateTime;
 
 import static java.util.Objects.requireNonNull;
+import org.jspecify.annotations.Nullable;
 
 @Getter
 @Entity
@@ -44,10 +45,13 @@ public class Payment extends BaseEntity {
     @AttributeOverride(name = "amount", column = @Column(name = "amount", nullable = false))
     private Money amount;
 
+    @Nullable
     private String transactionKey;
 
+    @Nullable
     private ZonedDateTime approvedAt;
 
+    @Nullable
     private String failureReason;
 
     /**
@@ -72,7 +76,7 @@ public class Payment extends BaseEntity {
     /**
      * 승인 확정. POINT 결제는 PG를 거치지 않으므로 transactionKey가 null이다 (참고: Payment-003).
      */
-    public void approve(String transactionKey) {
+    public void approve(@Nullable String transactionKey) {
         status.requireTransitionTo(PaymentStatus.APPROVED);
 
         this.status = PaymentStatus.APPROVED;
@@ -83,7 +87,7 @@ public class Payment extends BaseEntity {
     /**
      * 실패 확정. <b>확보했던 재고를 되돌리는 것은 호출자의 몫이다</b> (참고: Order-007, Payment-006).
      */
-    public void fail(String reason) {
+    public void fail(@Nullable String reason) {
         status.requireTransitionTo(PaymentStatus.FAILED);
 
         if (reason == null || reason.isBlank()) {

@@ -15,6 +15,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static java.util.Objects.requireNonNull;
+import org.jspecify.annotations.Nullable;
 
 @Getter
 @Entity
@@ -48,6 +49,7 @@ public class Order extends BaseEntity {
     @Column(nullable = false)
     private ZonedDateTime orderedAt;
 
+    @Nullable
     private ZonedDateTime paidAt;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)

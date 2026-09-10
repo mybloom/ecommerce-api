@@ -18,6 +18,7 @@ import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * 접수(T0)·승인(T1)·실패 처리(T2)를 각각 독립 트랜잭션으로 수행한다.
@@ -67,7 +68,7 @@ public class PaymentProcessor {
      * 여기서 명시적으로 복원한다 (참고: Order-007).
      */
     @Transactional
-    public Payment markFailed(Payment accepted, String orderNumber, String reason) {
+    public Payment markFailed(Payment accepted, String orderNumber, @Nullable String reason) {
         Order order = findOrder(orderNumber);
 
         Payment failed = paymentService.fail(new PaymentServiceDto.FailCommand(accepted.getId(), reason));

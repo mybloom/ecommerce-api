@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 
 @RestControllerAdvice
 @Slf4j
@@ -149,7 +150,7 @@ public class ApiControllerAdvice {
         return matcher.find() ? matcher.group(1) : "";
     }
 
-    private ResponseEntity<ApiResponse<?>> failureResponse(ErrorType errorType, String errorMessage) {
+    private ResponseEntity<ApiResponse<?>> failureResponse(ErrorType errorType, @Nullable String errorMessage) {
         return ResponseEntity.status(errorType.getStatus())
             .body(ApiResponse.fail(errorType.getCode(), errorMessage != null ? errorMessage : errorType.getMessage()));
     }

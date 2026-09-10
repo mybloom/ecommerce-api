@@ -52,6 +52,16 @@ public class MemberFixture {
         );
     }
 
+    public static MemberV1Dto.RegisterRequest aRegisterRequestWithEmail(String email) {
+        return new MemberV1Dto.RegisterRequest(
+                DEFAULT_LOGIN_ID,
+                email,
+                DEFAULT_BIRTH_DATE,
+                DEFAULT_STRING_GENDER,
+                DEFAULT_PASSWORD
+        );
+    }
+
     public static MemberV1Dto.RegisterRequest aRegisterRequestWithPassword(String password) {
         return new MemberV1Dto.RegisterRequest(
                 DEFAULT_LOGIN_ID,

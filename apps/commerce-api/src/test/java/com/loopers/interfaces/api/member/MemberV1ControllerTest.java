@@ -47,6 +47,20 @@ class MemberV1ControllerTest {
         }
 
         @Test
+        @DisplayName("회원가입 요청에 이메일이 없으면 400 Bad Request")
+        void register_validation_null_email() throws Exception {
+            // given
+            String missingEmail = null;
+            MemberV1Dto.RegisterRequest invalidRequest = MemberFixture.aRegisterRequestWithEmail(missingEmail);
+
+            // when & then
+            mockMvc.perform(post("/api/v1/members")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(invalidRequest)))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
         @DisplayName("회원가입 요청 비밀번호가 4자 미만이면 400 Bad Request")
         void register_validation_short_password() throws Exception {
             MemberV1Dto.RegisterRequest invalidRequest = MemberFixture.aRegisterRequestWithPassword("pwd");

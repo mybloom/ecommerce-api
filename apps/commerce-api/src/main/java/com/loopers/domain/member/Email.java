@@ -2,6 +2,7 @@ package com.loopers.domain.member;
 
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
@@ -18,6 +19,7 @@ public class Email {
     private static final Pattern EMAIL_PATTERN =
             Pattern.compile("^[a-zA-Z0-9_+&*-]+(?:\\.[a-zA-Z0-9_+&*-]+)*@(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,7}$");
 
+    @Column(nullable = false)
     private String address;
 
     public static Email of(String address) {

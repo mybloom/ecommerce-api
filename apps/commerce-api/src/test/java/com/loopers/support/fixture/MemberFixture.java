@@ -73,6 +73,16 @@ public class MemberFixture {
         );
     }
 
+    public static MemberUseCaseDto.RegisterInfo aRegisterInfoWith(String loginId, String email) {
+        return new MemberUseCaseDto.RegisterInfo(
+                loginId,
+                email,
+                DEFAULT_BIRTH_DATE,
+                DEFAULT_USECASE_GENDER,
+                DEFAULT_PASSWORD
+        );
+    }
+
     // MemberServiceDto.CreateCommand 생성
     public static MemberServiceDto.RegisterCommand aRegisterCommand() {
         return new MemberServiceDto.RegisterCommand(
@@ -115,6 +125,19 @@ public class MemberFixture {
 
     public static Member aMemberWithLoginId(String loginId) {
         return Member.register(aRegisterCommandWithLoginId(loginId), PASSWORD_ENCODER);
+    }
+
+    public static Member aMemberWithLoginIdAndEmail(String loginId, String email) {
+        return Member.register(
+                new MemberServiceDto.RegisterCommand(
+                        loginId,
+                        email,
+                        DEFAULT_BIRTH_DATE,
+                        DEFAULT_SERVICE_GENDER,
+                        DEFAULT_PASSWORD
+                ),
+                PASSWORD_ENCODER
+        );
     }
 
     // Member 엔티티 생성(JPA 저장된 상태)

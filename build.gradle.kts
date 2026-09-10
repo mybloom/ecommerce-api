@@ -90,7 +90,7 @@ subprojects {
         options.errorprone {
             // NullAway 만 켠다. Error Prone 의 나머지 검사는 이번 결정의 범위가 아니다.
             disableAllChecks = true
-            check("NullAway", CheckSeverity.WARN)
+            check("NullAway", CheckSeverity.ERROR)
             // 생성 소스(QueryDSL Q 클래스)는 고칠 소스가 없고,
             // 테스트는 일부러 null 을 넣거나 응답의 optional 필드를 바로 꺼내 쓰는 자리라 제외한다.
             excludedPaths = ".*/build/generated/.*|.*/src/test/.*|.*/src/testFixtures/.*"

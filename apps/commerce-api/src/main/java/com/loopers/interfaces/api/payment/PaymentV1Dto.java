@@ -1,8 +1,6 @@
 package com.loopers.interfaces.api.payment;
 
 import com.loopers.application.payment.PaymentUseCaseDto;
-import com.loopers.domain.payment.PaymentMethod;
-import com.loopers.domain.payment.PaymentStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -19,7 +17,7 @@ public class PaymentV1Dto {
             String orderNumber,
 
             @NotNull(message = "결제 수단은 필수입니다.")
-            PaymentMethod method
+            PaymentUseCaseDto.PaymentMethod method
     ) {
         public PaymentUseCaseDto.PayInfo toInfo(Long memberId) {
             return new PaymentUseCaseDto.PayInfo(memberId, orderNumber, method);
@@ -28,8 +26,8 @@ public class PaymentV1Dto {
 
     public record PayResponse(
             String orderNumber,
-            PaymentMethod method,
-            PaymentStatus status,
+            PaymentUseCaseDto.PaymentMethod method,
+            PaymentUseCaseDto.PaymentStatus status,
             Long amount,
             @Nullable ZonedDateTime approvedAt,
             @Nullable String failureReason

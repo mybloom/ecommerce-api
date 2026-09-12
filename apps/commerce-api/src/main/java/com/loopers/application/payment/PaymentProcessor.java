@@ -6,6 +6,7 @@ import com.loopers.domain.order.OrderNumber;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.order.OrderServiceDto;
 import com.loopers.domain.payment.Payment;
+import com.loopers.domain.payment.PaymentMethod;
 import com.loopers.domain.payment.PaymentService;
 import com.loopers.domain.payment.PaymentServiceDto;
 import com.loopers.domain.point.PointService;
@@ -45,7 +46,9 @@ public class PaymentProcessor {
         Order order = findPayableOrder(info.orderNumber(), info.memberId());
 
         return paymentService.request(new PaymentServiceDto.RequestCommand(
-                order.getId(), info.memberId(), info.method(), order.getTotalAmount()));
+                order.getId(), info.memberId(),
+                PaymentMethod.valueOf(info.method().name()),
+                order.getTotalAmount()));
     }
 
     /**

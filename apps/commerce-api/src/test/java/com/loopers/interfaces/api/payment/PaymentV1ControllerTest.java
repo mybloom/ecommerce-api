@@ -2,7 +2,7 @@ package com.loopers.interfaces.api.payment;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.payment.PaymentUseCase;
-import com.loopers.domain.payment.PaymentMethod;
+import com.loopers.application.payment.PaymentUseCaseDto;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -30,7 +30,7 @@ class PaymentV1ControllerTest {
     @MockitoBean
     private PaymentUseCase paymentUseCase;
 
-    private String aRequestBody(String orderNumber, PaymentMethod method) throws Exception {
+    private String aRequestBody(String orderNumber, PaymentUseCaseDto.PaymentMethod method) throws Exception {
         return objectMapper.writeValueAsString(new PaymentV1Dto.PayRequest(orderNumber, method));
     }
 
@@ -44,7 +44,7 @@ class PaymentV1ControllerTest {
             // given
             String orderNumber = "20260827-A3F9K2QP";
 
-            String requestBody = aRequestBody(orderNumber, PaymentMethod.POINT);
+            String requestBody = aRequestBody(orderNumber, PaymentUseCaseDto.PaymentMethod.POINT);
 
             // when & then
             mockMvc.perform(post(ENDPOINT)
@@ -60,7 +60,7 @@ class PaymentV1ControllerTest {
             long memberId = 1L;
             String blankOrderNumber = "";
 
-            String requestBody = aRequestBody(blankOrderNumber, PaymentMethod.POINT);
+            String requestBody = aRequestBody(blankOrderNumber, PaymentUseCaseDto.PaymentMethod.POINT);
 
             // when & then
             mockMvc.perform(post(ENDPOINT)

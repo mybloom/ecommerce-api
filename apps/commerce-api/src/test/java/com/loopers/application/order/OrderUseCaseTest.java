@@ -113,7 +113,7 @@ class OrderUseCaseTest {
             int remainingStock = findStockOf(savedProduct);
 
             assertAll(
-                    () -> assertThat(result.status()).isEqualTo(OrderStatus.AWAITING_PAYMENT),
+                    () -> assertThat(result.status()).isEqualTo(OrderUseCaseDto.OrderStatus.AWAITING_PAYMENT),
                     () -> assertThat(result.totalAmount()).isEqualTo(expectedTotalAmount),
                     () -> assertThat(result.orderNumber()).isNotBlank(),
                     () -> assertThat(result.orderedAt()).isNotNull(),
@@ -145,7 +145,7 @@ class OrderUseCaseTest {
             int remainingStock = findStockOf(savedProduct);
 
             assertAll(
-                    () -> assertThat(result.status()).isEqualTo(OrderStatus.AWAITING_PAYMENT),
+                    () -> assertThat(result.status()).isEqualTo(OrderUseCaseDto.OrderStatus.AWAITING_PAYMENT),
                     () -> assertThat(result.totalAmount()).isEqualTo(expectedTotalAmount),
                     () -> assertThat(remainingStock).isEqualTo(initialStock - totalQuantity)
             );
@@ -176,7 +176,7 @@ class OrderUseCaseTest {
 
             assertAll(
                     () -> assertThat(second.orderNumber()).isEqualTo(first.orderNumber()),
-                    () -> assertThat(second.status()).isEqualTo(OrderStatus.AWAITING_PAYMENT),
+                    () -> assertThat(second.status()).isEqualTo(OrderUseCaseDto.OrderStatus.AWAITING_PAYMENT),
                     () -> assertThat(first.isDuplicatedRequest()).isFalse(),
                     () -> assertThat(second.isDuplicatedRequest()).isTrue(),
                     () -> assertThat(remainingStock).isEqualTo(initialStock - orderQuantity)

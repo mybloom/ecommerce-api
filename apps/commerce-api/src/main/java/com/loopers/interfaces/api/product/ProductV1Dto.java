@@ -1,7 +1,6 @@
 package com.loopers.interfaces.api.product;
 
 import com.loopers.application.product.ProductUseCaseDto;
-import com.loopers.domain.product.ProductStatus;
 
 import java.time.ZonedDateTime;
 
@@ -17,7 +16,7 @@ public class ProductV1Dto {
             Long price,
             boolean isSoldOut,
             int likeCount,
-            ProductStatus status,
+            ProductUseCaseDto.ProductStatus status,
             ZonedDateTime openedAt
     ) {
         public static GetProductResponse from(ProductUseCaseDto.GetProductResult result) {

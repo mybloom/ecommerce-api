@@ -6,7 +6,7 @@ import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.brand.BrandStatus;
 import com.loopers.domain.member.Member;
 import com.loopers.domain.member.MemberRepository;
-import com.loopers.domain.order.OrderStatus;
+import com.loopers.application.order.OrderUseCaseDto;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductFixture;
 import com.loopers.domain.product.ProductRepository;
@@ -109,7 +109,7 @@ class OrderV1ApiE2ETest {
                     () -> assertThat(response.getBody().meta().result())
                             .isEqualTo(ApiResponse.Metadata.Result.SUCCESS),
                     () -> assertThat(response.getBody().data().orderNumber()).matches("^\\d{8}-[0-9A-Z]{8}$"),
-                    () -> assertThat(response.getBody().data().status()).isEqualTo(OrderStatus.AWAITING_PAYMENT),
+                    () -> assertThat(response.getBody().data().status()).isEqualTo(OrderUseCaseDto.OrderStatus.AWAITING_PAYMENT),
                     () -> assertThat(response.getBody().data().totalAmount()).isEqualTo(expectedTotalAmount),
                     () -> assertThat(response.getBody().data().orderedAt()).isNotNull(),
                     () -> assertThat(response.getBody().data().isDuplicatedRequest()).isFalse(),

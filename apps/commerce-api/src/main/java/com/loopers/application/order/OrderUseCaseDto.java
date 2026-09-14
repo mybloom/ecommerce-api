@@ -1,12 +1,19 @@
 package com.loopers.application.order;
 
 import com.loopers.domain.order.Order;
-import com.loopers.domain.order.OrderStatus;
 
 import java.time.ZonedDateTime;
 import java.util.List;
 
 public class OrderUseCaseDto {
+
+    /**
+     * API 응답 계약이 도메인 enum 에 묶이지 않도록 레이어마다 따로 둔다.
+     * 도메인에서 상수를 바꿔도 여기서 변환이 깨지며 드러난다.
+     */
+    public enum OrderStatus {
+        PENDING, AWAITING_PAYMENT, ORDER_FAILED, PAID, PAYMENT_FAILED
+    }
 
     public record OrderItemInfo(Long productId, int quantity) {
     }
@@ -42,7 +49,7 @@ public class OrderUseCaseDto {
         private static PlaceOrderResult of(Order order, boolean isDuplicatedRequest) {
             return new PlaceOrderResult(
                     order.getOrderNumber().getValue(),
-                    order.getStatus(),
+                    OrderStatus.valueOf(order.getStatus().name()),
                     order.getTotalAmount().getAmount(),
                     order.getOrderedAt(),
                     isDuplicatedRequest

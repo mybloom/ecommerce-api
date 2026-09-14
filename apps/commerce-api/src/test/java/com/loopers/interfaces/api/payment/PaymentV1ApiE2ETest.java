@@ -11,8 +11,7 @@ import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderNumber;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.order.OrderStatus;
-import com.loopers.domain.payment.PaymentMethod;
-import com.loopers.domain.payment.PaymentStatus;
+import com.loopers.application.payment.PaymentUseCaseDto;
 import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointRepository;
 import com.loopers.domain.point.PointServiceDto;
@@ -119,7 +118,7 @@ class PaymentV1ApiE2ETest {
     }
 
     private ResponseEntity<ApiResponse<PaymentV1Dto.PayResponse>> requestPayment(Long memberId, String orderNumber) {
-        PaymentV1Dto.PayRequest request = new PaymentV1Dto.PayRequest(orderNumber, PaymentMethod.POINT);
+        PaymentV1Dto.PayRequest request = new PaymentV1Dto.PayRequest(orderNumber, PaymentUseCaseDto.PaymentMethod.POINT);
         ParameterizedTypeReference<ApiResponse<PaymentV1Dto.PayResponse>> responseType =
                 new ParameterizedTypeReference<>() {};
 
@@ -162,8 +161,8 @@ class PaymentV1ApiE2ETest {
             assertAll(
                     () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
                     () -> assertThat(response.getBody().data().orderNumber()).isEqualTo(orderNumber),
-                    () -> assertThat(response.getBody().data().method()).isEqualTo(PaymentMethod.POINT),
-                    () -> assertThat(response.getBody().data().status()).isEqualTo(PaymentStatus.APPROVED),
+                    () -> assertThat(response.getBody().data().method()).isEqualTo(PaymentUseCaseDto.PaymentMethod.POINT),
+                    () -> assertThat(response.getBody().data().status()).isEqualTo(PaymentUseCaseDto.PaymentStatus.APPROVED),
                     () -> assertThat(response.getBody().data().amount()).isEqualTo(ORDER_AMOUNT),
                     () -> assertThat(response.getBody().data().approvedAt()).isNotNull(),
                     () -> assertThat(paidOrder.getStatus()).isEqualTo(OrderStatus.PAID),

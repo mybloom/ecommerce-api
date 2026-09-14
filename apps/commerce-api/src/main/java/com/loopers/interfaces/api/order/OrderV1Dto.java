@@ -1,7 +1,6 @@
 package com.loopers.interfaces.api.order;
 
 import com.loopers.application.order.OrderUseCaseDto;
-import com.loopers.domain.order.OrderStatus;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
@@ -43,7 +42,7 @@ public class OrderV1Dto {
 
     public record PlaceOrderResponse(
             String orderNumber,
-            OrderStatus status,
+            OrderUseCaseDto.OrderStatus status,
             Long totalAmount,
             ZonedDateTime orderedAt,
             boolean isDuplicatedRequest

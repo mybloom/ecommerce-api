@@ -1,13 +1,23 @@
 package com.loopers.application.payment;
 
 import com.loopers.domain.payment.Payment;
-import com.loopers.domain.payment.PaymentMethod;
-import com.loopers.domain.payment.PaymentStatus;
 
 import java.time.ZonedDateTime;
 import org.jspecify.annotations.Nullable;
 
 public class PaymentUseCaseDto {
+
+    /**
+     * API 계약이 도메인 enum 에 묶이지 않도록 레이어마다 따로 둔다.
+     * 도메인에서 상수를 바꿔도 여기서 변환이 깨지며 드러난다.
+     */
+    public enum PaymentMethod {
+        POINT
+    }
+
+    public enum PaymentStatus {
+        PENDING, APPROVED, FAILED
+    }
 
     /**
      * 결제 금액은 입력에 없다. 주문의 totalAmount를 그대로 쓴다 (참고: 07_payment.md Payment-002).
@@ -29,8 +39,8 @@ public class PaymentUseCaseDto {
         public static PayResult from(String orderNumber, Payment payment) {
             return new PayResult(
                     orderNumber,
-                    payment.getMethod(),
-                    payment.getStatus(),
+                    PaymentMethod.valueOf(payment.getMethod().name()),
+                    PaymentStatus.valueOf(payment.getStatus().name()),
                     payment.getAmount().getAmount(),
                     payment.getApprovedAt(),
                     payment.getFailureReason()

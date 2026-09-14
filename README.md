@@ -1,9 +1,8 @@
 # Ecommerce API
 
-이커머스 핵심 도메인을 구현하고, **애그리거트 경계·동시성 제어·트랜잭션 경계에 대한 판단을 기록으로 남긴** 백엔드 프로젝트입니다.
-
-회원, 포인트, 브랜드, 상품, 좋아요, 주문, 결제 도메인을 레이어드 아키텍처로 구현했습니다.
-설계 판단은 코드에 주석으로, 그 근거는 각 기능의 Pull Request 설명에 남겼습니다.
+이커머스 핵심 도메인을 구현한 백엔드 프로젝트입니다.
+테스트는 도메인부터 E2E까지 5계층으로 나눠 촘촘하게 작성했고, 뮤테이션 테스트로 테스트가 결함을 실제로 잡는지 확인했습니다.
+AI로 개발하면서 규칙 문서, 테스트, 정적 분석을 함께 써서 결과가 모델의 판단에 좌우되지 않도록 했습니다.
 
 ---
 
@@ -24,11 +23,6 @@
 * **언어/프레임워크** — Java 21, Spring Boot 3.4, Spring Data JPA
 * **저장소/빌드** — MySQL, Gradle Kotlin DSL, Docker
 * **테스트/정적분석** — JUnit 5, Mockito, AssertJ, Testcontainers, Error Prone + NullAway, pitest, Jacoco
-
-정적 분석은 Error Prone + NullAway 로 **컴파일 단계에서** null 흐름을 검사합니다.
-한 번에 ERROR 로 켜면 빌드가 멈추므로 WARN 으로 켜서 위반을 정리한 뒤 ERROR 로 올렸고,
-생성 소스와 테스트는 일부러 null 을 넣는 자리라 검사에서 제외했습니다.
-→ [build.gradle.kts](./build.gradle.kts)
 
 ---
 

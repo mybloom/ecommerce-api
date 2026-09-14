@@ -18,6 +18,8 @@ plugins {
     id("org.springframework.boot") apply false
     id("io.spring.dependency-management")
     id("net.ltgt.errorprone") version "4.1.0" apply false
+    // 뮤테이션 테스트. subprojects 에서 일괄 적용하지 않고 apps:commerce-api 에만 건다
+    id("info.solidsoft.pitest") version "1.15.0" apply false
 }
 
 java {

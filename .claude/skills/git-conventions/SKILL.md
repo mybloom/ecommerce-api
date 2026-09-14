@@ -61,6 +61,7 @@ Claude-Session: https://claude.ai/code/session_xxx
 | `featureN_work` | 실제 작업용. 시행착오가 그대로 쌓인다 | **하지 않는다** (로컬 전용) |
 | `featureN` | PR용. `main`에서 새로 만들어 정리된 히스토리만 담는다 | 여기서만 |
 | `claude_docs` | 문서 전용. 기능과 무관하게 누적 | |
+| `pr_docs` | PR 설명 문서 전용(`docs/pr/**`). PR diff 에 섞이지 않게 분리 | |
 
 `N`은 두 자리 (`feature01`, `feature02`, ...). PR은 `featureN`에서 `main`으로 연다.
 
@@ -81,6 +82,7 @@ Claude-Session: https://claude.ai/code/session_xxx
 | `apps/commerce-api/CLAUDE.md` | `claude_docs` | 위와 같음 |
 | `apps/commerce-api/docs/**` | `claude_docs` | 컨벤션 문서 |
 | `docs/참고자료/**` | `claude_docs` | 학습·참고용. 특정 기능에 매이지 않음 |
+| `docs/decisions/**` | `claude_docs` | 프로젝트 전반의 결정. 특정 기능에 매이지 않는다 |
 | **`docs/도메인모델/**`** | **구현 브랜치** | 명세는 구현과 **같이 리뷰돼야** 한다 |
 | `apps/**/src/**` | 구현 브랜치 | |
 

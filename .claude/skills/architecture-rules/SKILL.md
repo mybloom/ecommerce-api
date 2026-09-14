@@ -44,6 +44,34 @@ HTTP 진입점. Spring MVC 사용.
     - `*Response`는 정적 `from(*UseCaseDto.*Result)` 팩토리 메서드 보유
 - 책임: HTTP ↔ DTO 변환만. 비즈니스 로직 금지.
 
+### enum 은 레이어마다 따로 둔다
+
+**`*V1Dto` 는 `domain` 의 enum 을 쓰지 않는다.** `*UseCaseDto` 안에 같은 이름의 enum 을 두고
+그것을 쓴다. 변환은 `valueOf(x.name())`.
+
+```java
+// ❌ interfaces 가 domain 을 직접 참조 — 의존성 방향 위반
+import com.loopers.domain.order.OrderStatus;
+public record PlaceOrderResponse(String orderNumber, OrderStatus status, ...) {}
+
+// ✅
+public record PlaceOrderResponse(String orderNumber, OrderUseCaseDto.OrderStatus status, ...) {}
+```
+
+`V1` 이 붙은 이상 그 응답은 **바뀌지 않겠다고 약속한 계약**이다. 도메인 enum 을 그대로 노출하면
+도메인에서 상수 이름을 바꾸는 순간 API 응답이 조용히 바뀐다. 레이어마다 두면 그 순간
+`valueOf` 가 깨지면서 **드러난다.**
+
+참고 구현: `Member` 의 `Gender` (`domain.member.Gender` / `MemberServiceDto.Gender` /
+`MemberUseCaseDto.Gender` 세 벌).
+
+**감수한 것** — 이 방식은 API 계약을 **application 레이어에 고정**한다. `*UseCaseDto` 의 enum 을
+바꾸면 API 응답도 바뀐다는 뜻이다. `V1` 인 동안 그 층에서 바꾸지 않는 것으로 지킨다.
+
+`*V1Dto` 안에 네 번째 벌을 두면 완전히 분리되지만 그렇게 하지 않았다. 의존성 규칙은
+`interfaces → application` 을 허용하므로 `*UseCaseDto` 의 enum 으로 규칙은 이미 만족하고,
+네 벌째는 변환을 한 겹 더 늘린다. **바꾼다면 `Member` 까지 함께 바꿔야 패턴이 갈리지 않는다.**
+
 ### `application.{도메인}`
 유스케이스 오케스트레이션. 트랜잭션 경계.
 - `*UseCase` — 유스케이스 진입점 (`@Component` 사용)
@@ -57,8 +85,32 @@ HTTP 진입점. Spring MVC 사용.
 - `*Processor` — 트랜잭션 경계가 UseCase와 갈라져야 할 때만 두는 보조 컴포넌트 (`@Component` + `@Transactional`)
     - 트랜잭션 안에서 잡을 수 없는 예외(예: DB 제약 위반)를 UseCase가 트랜잭션 **밖**에서 변환해야 할 때 사용
     - `*UseCase`는 트랜잭션 없이 `*Processor`를 감싸 예외를 변환하고, `*Processor`가 도메인 서비스를 조합
-    - 그런 이유가 없으면 만들지 않는다. `*UseCase`에 `@Transactional`을 붙이는 것이 기본
+    - 트랜잭션 경계는 application 레이어가 갖는다. 그 경계를 `*UseCase`가 직접 들 것인지
+      `*Processor`로 내릴 것인지는 **예외를 트랜잭션 밖에서 변환해야 하는가**로 갈린다.
+      그럴 이유가 없으면 `*Processor`를 만들지 않고 `*UseCase`에 `@Transactional`을 붙인다
     - 예: `application/productlike/ProductLikeProcessor.java`
+
+### 유일해야 하는 필드는 세 겹으로 막는다
+
+`loginId`, `email`, 주문번호처럼 중복될 수 없는 값은 **도메인 검사 + DB UNIQUE 제약 +
+UseCase 에서 위반을 409로 변환** 셋을 함께 둔다.
+
+| | 맡는 것 |
+|---|---|
+| 도메인 검사 (`existsBy~`) | 흔한 중복을 **정확한 메시지**로 거절 |
+| DB UNIQUE 제약 | 검사와 저장 사이의 **경합**을 막는다 |
+| UseCase 의 `DataIntegrityViolationException` 변환 | 제약 위반을 500 이 아닌 **409** 로 |
+
+- **검사만 두면** 두 요청이 나란히 검사를 통과해 둘 다 저장된다
+- **제약만 두면** 흔한 중복까지 예외 경로로 처리되고, 제약이 여럿일 때 어느 것을 어겼는지 모른다
+- **변환을 빠뜨리면** 제약이 막아도 500 으로 나간다
+
+UNIQUE 위반은 **커밋 시점에 터지므로** `@Transactional` 이 붙은 메서드 안에서는 잡을 수 없다.
+위의 `*Processor` 로 트랜잭션을 옮기고 UseCase 는 밖에서 변환만 한다.
+참고: `application/member/MemberProcessor.java`, `application/payment/PaymentUseCase.java`
+
+**락으로 막지 않는다.** 아직 없는 행은 잠글 대상이 없고, `FOR UPDATE` 로 없는 행을 잠그면
+갭 락으로 번져 데드락이 된다.
 - 비즈니스 규칙은 도메인에 위임. 여기서는 "흐름"만.
 
 ### `domain.{도메인}`
@@ -107,6 +159,7 @@ throw new CoreException(ErrorType.BAD_REQUEST, "충전 금액은 1 이상이어�
 - `@NoArgsConstructor(access = PROTECTED)` 필수
 - `@Setter` 금지
 - enum 속성으로 의미를 명시한다
+- **enum 필드는 `@Enumerated(EnumType.STRING)` 을 반드시 붙인다**
 
 ```java
 import lombok.Getter;
@@ -123,6 +176,16 @@ public enum BrandStatus {
     private final String label;
     private final String description;
 }
+```
+
+`@Enumerated` 를 빠뜨리면 JPA 기본값인 **ORDINAL 이 적용되어 순서 번호로 저장된다.** 그러면
+enum 에 값을 추가하거나 순서를 바꿀 때 **이미 저장된 행의 의미가 달라지고**, 컬럼만 봐서는
+무슨 값인지도 알 수 없다.
+
+```java
+@Enumerated(EnumType.STRING)
+@Column(nullable = false)
+private BrandStatus status;
 ```
 
 ## Service 반환 타입 규칙
@@ -246,6 +309,21 @@ void 브랜드를_조회하면_브랜드_정보를_반환한다() {
     );
 }
 ```
+- **기대값은 리터럴 또는 픽스처 상수로 둔다.** 프로덕션의 계산을 테스트가 따라 하면
+    같은 실수를 양쪽이 함께 하고 통과한다
+
+```java
+// ❌ 프로덕션의 덧셈을 테스트가 따라 한다
+assertThat(result.balance()).isEqualTo(initialAmount + chargeAmount);
+
+// ✅ 테스트가 통제하는 값
+Long expectedBalance = 1_500L;
+assertThat(result.balance()).isEqualTo(expectedBalance);
+```
+
+> 같은 이유로 기대값을 `member.toProfile()` 이나 `member.getLoginId()` 처럼 **입력에서
+> 파생시키지 않는다.** 실제값과 출처가 같아져 동어반복이 된다.
+
 - **given의 모든 데이터는 변수로 추출한다.** when/then 안에 리터럴 값을
   직접 박지 않는다. 변수명이 곧 테스트 의도를 설명해야 한다.
 - **변수명이 곧 테스트 의도를 설명해야 한다.** when/then 안에 의미 불명의
@@ -429,6 +507,12 @@ private Payment findPaymentOf(Long orderId) {
   벌크 연산
 - 판단 기준: "이 메서드의 쿼리 동작이 메서드명만 보고 명확한가?"
   → 명확하면 Spring Data JPA 신뢰, 모호하면 검증
+- 테스트 어노테이션은 **`@SpringBootTest`** 를 쓴다. `@DataJpaTest` 는 쓰지 않는다
+    - `@DataJpaTest` 는 DataSource 를 인메모리 DB 로 갈아끼운다. 이 저장소는 `modules/jpa` 의
+      `MySqlTestContainersConfig` 로 **실제 MySQL(mysql:8.0)** 을 띄운다
+    - `modules/jpa` 의 커스텀 `DataSourceConfig` 는 슬라이스 테스트가 자동으로 집지 않는다
+    - 잠금(`@Lock(PESSIMISTIC_WRITE)`) 동작은 실제 MySQL 에서만 의미 있게 검증된다
+- **이 기준은 여기가 정본이다.** 워크플로 스킬은 이 절을 가리키기만 한다
 
 ## 참고 구현체 (필독)
 
@@ -457,7 +541,7 @@ private Payment findPaymentOf(Long orderId) {
 - 포인트: `docs/도메인모델/02_point.md`
 - 브랜드: `docs/도메인모델/03_brand.md`
 - 상품: `docs/도메인모델/04_product.md`
-- 상품 좋아요: `docs/도메인모델/05_prodocut-like.md`
+- 상품 좋아요: `docs/도메인모델/05_product-like.md`
 - 공통 규칙: `docs/도메인모델/공통/`
 
 ## 작업 흐름
@@ -466,5 +550,19 @@ private Payment findPaymentOf(Long orderId) {
 1. 해당 도메인 명세 문서를 먼저 읽음
 2. 회원/포인트 모듈에서 가장 유사한 케이스를 참고
 3. TFD 절차는 `tfd-workflow` skill을 따름
-4. 레이어별 상세 규칙은 각 레이어 skill을 따름
-   (`domain-layer`, `application-layer`, `interface-layer`, `infrastructure-layer`)
+4. 레이어별 상세 규칙은 `references/` 를 따름 (아래)
+
+## 상세 규칙 — `references/`
+
+이 문서는 규칙의 요약이다. 예제와 근거가 필요하면 해당 레이어 문서를 연다.
+
+| 레이어 | 문서 | 담고 있는 것 |
+|---|---|---|
+| `domain` | [domain-modeling.md](./references/domain-modeling.md) | 엔티티 vs VO, 불변성, `Math.addExact` 오버플로 방어, `@AttributeOverride`, CQS, 검증→상태변경 순서 |
+| `domain` | [domain-service.md](./references/domain-service.md) | 서비스 책임, CQS와 응답, `Command` 입력 정책, 멱등성 네이밍, `ErrorType` 선택 |
+| `application` | [usecase.md](./references/usecase.md) | UseCase 책임, 트랜잭션 경계, `Info → Command → Query → Result` 흐름, DTO 컨테이너 패턴 |
+| `interfaces` | [controller.md](./references/controller.md) | 컨트롤러 + `*V1ApiSpec` 분리, URL 컨벤션, Request 검증, `ApiResponse` 래핑, 슬라이스 vs E2E |
+| 테스트 | [testing.md](./references/testing.md) | `@Nested` 그룹화, 픽스처, Mockito 스타일, stubbing 범위, 경계값 커버리지 |
+| 테스트 | [entity-and-vo-testing.md](./references/entity-and-vo-testing.md) | 엔티티·VO 코드와 테스트 작성 규칙, 체크리스트 |
+
+규칙이 어긋나 보이면 **이 SKILL.md 가 우선**이다. `references/` 는 상세를 맡는다.

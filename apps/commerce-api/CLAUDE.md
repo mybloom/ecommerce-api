@@ -10,9 +10,10 @@ skill에 따로 있다(아래 참조). 같은 내용이 두 곳에 있으면 서
 | 위치 | 내용 |
 |---|---|
 | `.claude/skills/architecture-rules/` | 레이어 의존성, 패키지 네이밍, DTO 변환 체인, 예외 처리(`CoreException` / `ErrorType`), Lombok 정책, 테스트 컨벤션, 참고 구현체 |
+| `.claude/skills/architecture-rules/references/` | 위 규칙의 **레이어별 상세와 예제**. 필요할 때만 연다 (`domain-modeling`, `domain-service`, `usecase`, `controller`, `testing`, `entity-and-vo-testing`) |
 | `.claude/skills/tfd-workflow/` | 새 기능 추가 절차 — 한 번에 한 레이어씩, 테스트 먼저, 레이어마다 멈춰서 확인. **안에서 밖으로**(도메인부터) |
 | `.claude/skills/tfd-workflow-outside-in/` | 같은 절차를 **밖에서 안으로**(API 진입점부터). 아래 레이어는 계약만 만들어 스켈레톤으로 막고 한 겹씩 채운다 |
-| `.claude/skills/test-effectiveness/` | 작성한 테스트가 실제로 결함을 잡는지 검증. 전체가 초록불이 된 뒤 커밋 직전에 |
+| `.claude/skills/test-effectiveness/` | 작성한 테스트가 실제로 결함을 잡는지 검증. **3단계 종료 직후 도메인은 `pitest` 로**, 5단계 직후 나머지는 손으로 |
 | `.claude/skills/git-conventions/` | 커밋 메시지 형식, 커밋 분리 기준, 브랜치별 문서 소유, push/PR 규칙 |
 | `.claude/skills/pr-history/` | 기능을 마친 뒤 `featureN`과 `claude_docs`에 히스토리를 다시 구성 |
 | `docs/도메인모델/` | 도메인 명세. 해당 도메인 작업을 **시작하기 전에** 먼저 읽는다 |
@@ -36,6 +37,9 @@ docker-compose -f ./docker/infra-compose.yml up -d
 
 # 테스트 메서드 하나만 실행
 ./gradlew :apps:commerce-api:test --tests "com.loopers.domain.point.PointServiceTest.Register.saveMember_whenCreateSucceeds"
+
+# 도메인 뮤테이션 테스트 (Docker 불필요, 20초)
+./gradlew :apps:commerce-api:pitest
 
 # 애플리케이션 실행 (local 프로파일이 기본)
 ./gradlew :apps:commerce-api:bootRun

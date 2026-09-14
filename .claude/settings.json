@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "statusMessage": "아키텍처 규칙 검사",
+            "timeout": 10,
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path // empty' | { read -r f\n  [ -n \"$f\" ] && [ -f \"$f\" ] || exit 0\n  case \"$f\" in\n    */com/loopers/domain/*|*/com/loopers/infrastructure/*)\n      forbidden='application|interfaces'\n      msg='domain 과 infrastructure 는 application·interfaces 를 import 할 수 없습니다. 필요한 값은 인자로 받거나 domain 안에 인터페이스를 두고 바깥에서 구현하세요.' ;;\n    */com/loopers/interfaces/*)\n      forbidden='domain'\n      msg='interfaces 는 domain 을 직접 import 할 수 없습니다. 반드시 application 을 경유하고, enum 은 *UseCaseDto 안의 enum 을 쓰세요.' ;;\n    *) exit 0 ;;\n  esac\n\n  bad=$(grep -nE \"^import com\\.loopers\\.($forbidden)\\.\" \"$f\")\n  if [ -n \"$bad\" ]; then\n    jq -nc --arg f \"$f\" --arg b \"$bad\" --arg m \"$msg\" '{\n      decision: \"block\",\n      reason: (\"의존성 방향 위반 (architecture-rules 절대 규칙)\\n\" + $f + \"\\n\" + $b + \"\\n\\n\" + $m)\n    }'\n    exit 0\n  fi\n\n  case \"$f\" in */com/loopers/domain/*) ;; *) exit 0 ;; esac\n  emb=$(awk '\n    /^[[:space:]]*@Embedded[[:space:]]*$/ { blk=1; ln=NR; col=0; ovr=0; next }\n    blk {\n      t=$0; sub(/^[[:space:]]+/, \"\", t)\n      if (t ~ /^@AttributeOverride/) { ovr=1 } else if (t ~ /^@Column/) { col=1 }\n      if (t !~ /^@/) { if (col && !ovr) print ln \": @Embedded \" t; blk=0 }\n    }' \"$f\")\n  [ -n \"$emb\" ] || exit 0\n  jq -nc --arg f \"$f\" --arg b \"$emb\" '{\n    decision: \"block\",\n    reason: (\"@Embedded 필드에 @Column 만 붙어 있습니다 — JPA 가 통째로 무시합니다\\n\" + $f + \"\\n\" + $b + \"\\n\\n컬럼명도 제약도 적용되지 않아 컴파일과 테스트는 통과하고 DDL 만 조용히 틀립니다. 실제로 Member.email 이 이 때문에 UNIQUE 가 빠져 같은 이메일로 중복 가입되던 적이 있습니다.\\n@AttributeOverride(name = \\\"<VO 안의 필드명>\\\", column = @Column(...)) 로 감싸세요.\")\n  }'\n}"
+          }
+        ]
+      }
+    ]
+  }
+}

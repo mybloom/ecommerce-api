@@ -1,9 +1,12 @@
 ---
 name: tfd-workflow
-description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 기능을 레이어 단위로 쪼개고, 각 레이어마다 테스트 작성 → 최소 구현 → 검증 → 사용자 확인 → 다음 레이어 순서로 진행. "기능 추가하자", "TFD로 만들자", "신규 API 만들자" 같은 요청에 적용.
+description: 새 기능을 **안에서 밖으로**(도메인부터) TFD로 추가할 때 사용. **이 프로젝트의 기본은 tfd-workflow-outside-in 이다** — 둘 중 무엇을 쓸지 고민되면 항상 outside-in 을 쓴다. 이 스킬은 사용자가 "도메인부터", "안에서 밖으로" 라고 명시적으로 요청할 때만 쓴다.
 ---
 
-# TFD Workflow — 새 기능 추가 절차
+# TFD Workflow (Inside-Out) — 새 기능 추가 절차
+
+> **이 프로젝트의 기본은 `tfd-workflow-outside-in` 이다.** 주문 기능부터 밖에서 안으로 개발해 왔고,
+> 당분간 이 스킬을 쓸 일이 없다. 사용자가 "도메인부터" 라고 명시할 때만 쓴다.
 
 ## 핵심 원칙
 
@@ -58,7 +61,7 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 
 ## 1단계: Domain Layer
 
-→ `domain-layer` skill의 상세 규칙을 따름. 여기서는 큰 흐름만.
+→ `architecture-rules` 의 `references/domain-modeling.md` · `references/domain-service.md` 를 따름. 여기서는 큰 흐름만.
 
 **엔티티/값객체를 먼저 끝내고, 그 다음에 도메인 서비스를 만든다. 둘을 한 번에 작성하지 않는다.**
 한 번에 리뷰할 변경량을 줄이기 위해서다.
@@ -121,16 +124,14 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 
 ## 2단계: Infrastructure Layer
 
-→ `infrastructure-layer` skill의 상세 규칙을 따름.
+→ `architecture-rules` 의 "패키지 구조와 네이밍" 을 따름.
 
 ### Repository 테스트 작성 기준
-### Repository 테스트 작성 기준
-- 테스트 작성 X: Spring Data JPA가 자동 생성하는 메서드 쿼리만 사용하는 경우
-- 테스트 작성 O: @Query, QueryDSL, 복잡한 조건/조인, 네이티브 쿼리 등
-- 테스트 어노테이션은 `@DataJpaTest` 사용 (`@SpringBootTest` 금지)
+
+→ `architecture-rules` 의 **"Repository 테스트 작성 기준"** 을 따른다. 여기에 옮겨 적지 않는다.
 
 ### 진행 순서
-1. **(필요 시) Repository 통합 테스트 작성** (`@DataJpaTest`)
+1. **(필요 시) Repository 통합 테스트 작성**
     - 위 "Repository 테스트 작성 기준"을 먼저 검토
     - 메서드 쿼리만 사용하는 단순 CRUD라면 이 단계 생략
 2. **JpaRepository 인터페이스 작성**
@@ -160,7 +161,7 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 
 ## 3단계: Application Layer
 
-→ `application-layer` skill의 상세 규칙을 따름.
+→ `architecture-rules` 의 `references/usecase.md` 를 따름.
 
 ### 진행 순서
 1. **UseCase 통합 테스트 작성** (`@SpringBootTest` + 실제 빈/DB)
@@ -199,7 +200,7 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 
 ## 4단계: Interface Layer
 
-→ `interface-layer` skill의 상세 규칙을 따름.
+→ `architecture-rules` 의 `references/controller.md` 를 따름.
 
 ### 진행 순서
 1. **Controller E2E 테스트 작성** (`@SpringBootTest` + `MockMvc` 또는 `RestAssured`)
@@ -217,6 +218,17 @@ description: 새 기능을 TFD(Test-First Development)로 추가할 때 사용. 
 - [ ] DTO 변환 체인 준수 (Request → Info, Result → Response)
 - [ ] Controller에 비즈니스 로직 없음
 - [ ] Swagger 명세는 `*V1ApiSpec`에 분리
+
+### 명세 대사 (기능 종료 전 필수)
+
+0단계에서 읽은 **도메인 명세를 다시 열어 규칙 한 줄씩 코드와 맞춰본다.**
+
+- 명세의 규칙·결정 번호마다 **그것을 지키는 코드가 어디 있는지** 짚는다
+- 짚히지 않는 것은 구현되지 않은 것이다. 사용자에게 보고한다
+- 구현하지 않기로 했다면 명세에 그렇게 적는다 — 말없이 넘어가지 않는다
+
+> `01_member.md` 에 "loginId, email 은 중복될 수 없다" 가 있었는데 `existsByLoginId` 만
+> 구현되어 있었다. 테스트도 전부 통과했다. **없는 기능은 테스트가 알려주지 않는다.**
 
 ### 종료 멘트
 ```

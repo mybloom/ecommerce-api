@@ -1,6 +1,6 @@
 ---
 name: tfd-workflow-outside-in
-description: 새 기능을 밖에서 안으로(outside-in) TFD로 추가할 때 사용. API 진입점부터 세우고 아래 레이어는 계약만 만들어 스켈레톤으로 막은 뒤, 단계마다 한 겹씩 채워 내려간다. "컨트롤러부터 만들자", "API 진입점부터", "밖에서 안으로", "outside-in으로 개발하자" 같은 요청에 적용. 반대 방향(도메인부터)은 tfd-workflow를 쓴다.
+description: 새 기능을 밖에서 안으로(outside-in) TFD로 추가할 때 사용. API 진입점부터 세우고 아래 레이어는 계약만 만들어 스켈레톤으로 막은 뒤, 단계마다 한 겹씩 채워 내려간다. "컨트롤러부터 만들자", "API 진입점부터", "밖에서 안으로", "outside-in으로 개발하자" 같은 요청에 적용. **이 프로젝트의 기본 워크플로다.** 반대 방향(도메인부터)은 사용자가 명시할 때만 tfd-workflow 를 쓴다.
 ---
 
 # TFD Workflow (Outside-In) — 밖에서 안으로 기능 추가
@@ -28,7 +28,7 @@ description: 새 기능을 밖에서 안으로(outside-in) TFD로 추가할 때 
 
 - **중간 단계에는 실행되는 검증이 거의 없다.** 아래가 스켈레톤이라 대부분의 테스트가 `@Disabled`다.
   이 구간을 목으로 메우려 하지 말 것 — 어차피 검증할 동작이 아직 없고, 남는 건 목 배선 확인뿐이다.
-  이 방식의 안전망은 마지막 단계에 몰려 있다.
+  안전망이 마지막 단계에 몰리는 것을 줄이려고 **3단계에서 도메인만 pitest 로 먼저 본다.**
 - **스켈레톤이 남으면 조용히 500이 된다.** 마지막 단계에서 반드시 전수 확인한다.
 
 ---
@@ -76,7 +76,7 @@ description: 새 기능을 밖에서 안으로(outside-in) TFD로 추가할 때 
 
 ## 1단계: Interface Layer
 
-→ `interface-layer` skill의 상세 규칙을 따름. 여기서는 큰 흐름만.
+→ `architecture-rules` 의 `references/controller.md` 를 따름. 여기서는 큰 흐름만.
 
 **API 표면을 먼저 확정하고, UseCase는 계약만 만든다.**
 
@@ -96,7 +96,7 @@ description: 새 기능을 밖에서 안으로(outside-in) TFD로 추가할 때 
     - `*UseCase`는 **시그니처만**. 본문은 `throw new UnsupportedOperationException("2단계에서 구현")`
     - 응답 타입에 도메인 enum이 필요하면 그 enum만 앞당겨 만든다. 행위(상태 전이 규칙 등)는 붙이지 않는다
 6. **E2E 테스트를 `@Disabled`로 작성**
-    - 완성 목표를 코드에 먼저 박아두는 용도. 마지막 단계에서 `@Disabled`를 뗀다
+    - 완성 목표를 코드에 먼저 남기는 용도. 마지막 단계에서 `@Disabled`를 뗀다
     - `@Disabled("N단계에서 활성화 — UseCase가 아직 스켈레톤이다")`처럼 사유를 남긴다
 7. **슬라이스 테스트 통과 확인**
 
@@ -128,7 +128,7 @@ API 표면이 잘못된 부분이 있으면 먼저 수정 요청해주세요.
 
 ## 2단계: Application Layer
 
-→ `application-layer` skill의 상세 규칙을 따름.
+→ `architecture-rules` 의 `references/usecase.md` 를 따름.
 
 **UseCase 본문을 채우고, 도메인 서비스는 계약만 만든다.**
 
@@ -171,7 +171,7 @@ API 표면이 잘못된 부분이 있으면 먼저 수정 요청해주세요.
 
 ## 3단계: Domain Layer
 
-→ `domain-layer` skill의 상세 규칙을 따름.
+→ `architecture-rules` 의 `references/domain-modeling.md` · `references/domain-service.md` 를 따름.
 
 **엔티티/값객체를 먼저 끝내고, 그 다음에 도메인 서비스를 만든다. 둘을 한 번에 작성하지 않는다.**
 한 번에 리뷰할 변경량을 줄이기 위해서다.
@@ -209,12 +209,18 @@ API 표면이 잘못된 부분이 있으면 먼저 수정 요청해주세요.
 5. **테스트 컴파일되도록 도메인 서비스 최소 구현** — 2단계 스켈레톤을 걷어낸다
 6. **테스트 통과 확인**
 7. **Repository 인터페이스 정의** (구현 X, 메서드 시그니처만)
+8. **뮤테이션 검증** — `./gradlew :apps:commerce-api:pitest`
+
+    밖에서 안으로 만들 때 **처음으로 진짜 초록불이 오는 구간이 여기다.** 아래는 아직 스켈레톤이고
+    위는 `@Disabled` 라 실행되는 검증이 도메인밖에 없다. 그래서 이 단계에서 도메인 테스트가
+    실제로 결함을 잡는지 확인하고 넘어간다 (20초). 판정 기준과 대응은 `test-effectiveness` 스킬에 있다.
 
 ### 완료 조건
 - [ ] 도메인 객체 단위 테스트 모두 통과
 - [ ] 엔티티 완료 시점(3-A)에 사용자 확인을 받았음
 - [ ] 도메인 서비스가 있다면 단위 테스트 통과 (Repository는 mock)
 - [ ] Repository 인터페이스 정의됨
+- [ ] **`pitest` 의 테스트 강도 100%.** SURVIVED 가 있으면 프로덕션이 아니라 테스트를 고쳤음
 - [ ] `architecture-rules`의 도메인 레이어 규칙 위반 없음
 
 ### 종료 멘트
@@ -227,6 +233,8 @@ API 표면이 잘못된 부분이 있으면 먼저 수정 요청해주세요.
 - 도메인 서비스: ...
 - Repository 인터페이스: ...
 
+뮤테이션: 변이 {N}개 중 {M}개 제거, 살아남음 {K}개, 테스트 강도 {P}%
+
 다음으로 Infrastructure Layer를 진행할까요?
 ```
 
@@ -236,16 +244,13 @@ API 표면이 잘못된 부분이 있으면 먼저 수정 요청해주세요.
 
 ## 4단계: Infrastructure Layer
 
-→ `infrastructure-layer` skill의 상세 규칙을 따름.
+→ `architecture-rules` 의 "패키지 구조와 네이밍" 을 따름.
 
 **여기서 처음으로 스프링 컨텍스트가 온전해진다.** Repository 구현 빈이 생겨야 관통 경로가 이어진다.
 
 ### Repository 테스트 작성 기준
-- 테스트 작성 X: Spring Data JPA가 자동 생성하는 메서드 쿼리만 사용하는 경우
-- 테스트 작성 O: `@Query`, QueryDSL, 복잡한 조건/조인, 네이티브 쿼리, 벌크 연산, 잠금(`@Lock`)
-- 테스트 어노테이션은 `@SpringBootTest`를 쓴다. 이 리포지토리에는 `@DataJpaTest`가 한 건도 없고,
-  `modules/jpa`의 커스텀 `DataSourceConfig` + MySQL 테스트컨테이너 위에서 전부 `@SpringBootTest`로 돈다
-  (`ProductRepositoryTest` 참고). 잠금 동작은 실제 MySQL에서만 의미 있게 검증된다
+
+→ `architecture-rules` 의 **"Repository 테스트 작성 기준"** 을 따른다. 여기에 옮겨 적지 않는다.
 
 ### 진행 순서
 1. **(필요 시) Repository 통합 테스트 작성**
@@ -292,11 +297,18 @@ API 표면이 잘못된 부분이 있으면 먼저 수정 요청해주세요.
    ```bash
    ./gradlew :apps:commerce-api:test
    ```
+5. **실효성 검증 — 커밋 직전 마지막 단계** → `test-effectiveness` 스킬을 따른다
+
+    도메인은 3단계에서 pitest 가 이미 봤다. 여기서는 **pitest 가 닿지 않는 곳**만 손으로 심는다 —
+    `application` · `interfaces` · 예외 변환 경로. 전체가 초록불이 된 지금이 처음이자 유일한 기회다.
+    대상은 이번 기능이 건드린 코드로 좁힌다.
 
 ### 완료 조건
 - [ ] `@Disabled`가 하나도 남아 있지 않고 전부 통과
 - [ ] `UnsupportedOperationException` 검색 결과 0건
 - [ ] 전체 스위트 초록불 (중간 단계에서 깨져 있던 것이 여기서 해소됨)
+- [ ] **`test-effectiveness` 로 application · interfaces · 예외 변환 경로를 검증했음**
+- [ ] **심은 결함이 원복됐음** — `git diff -- apps/commerce-api/src/main` 이 깨끗하다
 
 ### 종료 멘트
 ```
@@ -308,6 +320,7 @@ API 표면이 잘못된 부분이 있으면 먼저 수정 요청해주세요.
 
 스켈레톤 잔존: 0건
 전체 테스트: {N}개 통과
+실효성 검증: {심은 자리 N곳}, 고친 테스트 {M}개
 ```
 
 ---

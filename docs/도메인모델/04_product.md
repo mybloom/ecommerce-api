@@ -223,11 +223,11 @@
 |---|---|
 | UC-1 상품 목록 조회 | 엔드포인트·`ProductSort`·페이징·`brandId` 필터·2차 정렬 키 전부 미존재. QueryDSL은 `modules/jpa`에 이미 구성돼 있어 바로 사용 가능 |
 | 목록에서 브랜드 `ACTIVE` 아닌 상품 제외 | 단건 조회에서만 404로 처리됨 |
-| "내가 좋아요 눌렀는지" (`isLiked`) | UC-1/UC-2 응답에 미포함. ProductLike는 UC-1·UC-2 완료, UC-3만 남음 (참고: 05_prodocut-like.md) |
+| "내가 좋아요 눌렀는지" (`isLiked`) | UC-1/UC-2 응답에 미포함. ProductLike는 UC-1·UC-2 완료, UC-3만 남음 (참고: 05_product-like.md) |
 | `representativeImage`의 `ImageUrl` 값 객체 | 코드에서는 `String`. C.2 보류 항목으로 취급 |
 
 #### 다음 작업 후보
 
 1. **UC-1 상품 목록 조회** — `isLiked` 제외한 형태로 먼저 (brandId 필터 + 3종 정렬 + 페이징)
-2. **ProductLike UC-3** 좋아요한 상품 목록 조회 (참고: 05_prodocut-like.md)
+2. **ProductLike UC-3** 좋아요한 상품 목록 조회 (참고: 05_product-like.md)
 3. UC-1 / UC-2 응답에 `isLiked` 추가

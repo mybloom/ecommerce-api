@@ -1,5 +1,6 @@
 package com.loopers.application.product;
 
+import com.loopers.application.shared.PageResult;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.brand.BrandServiceDto;
@@ -21,5 +22,9 @@ public class ProductUseCase {
         Brand brand = brandService.retrieve(new BrandServiceDto.RetrieveCommand(product.getBrandId()));
 
         return ProductUseCaseDto.GetProductResult.from(product, brand);
+    }
+
+    public PageResult<ProductUseCaseDto.ProductSummaryResult> getProducts(ProductUseCaseDto.GetProductsInfo info) {
+        throw new UnsupportedOperationException("Application Layer 에서 구현");
     }
 }

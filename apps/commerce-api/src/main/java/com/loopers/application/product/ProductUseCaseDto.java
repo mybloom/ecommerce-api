@@ -3,6 +3,9 @@ package com.loopers.application.product;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductServiceDto;
+import com.loopers.domain.product.ProductSummary;
+import com.loopers.domain.shared.PageQuery;
+import org.jspecify.annotations.Nullable;
 
 import java.time.ZonedDateTime;
 
@@ -14,6 +17,49 @@ public class ProductUseCaseDto {
      */
     public enum ProductStatus {
         ON_SALE, OFF_SALE, HIDDEN
+    }
+
+    public enum ProductSort {
+        LATEST, PRICE_DESC, LIKE_DESC
+    }
+
+    public record GetProductsInfo(@Nullable Long memberId, @Nullable Long brandId, ProductSort sort, int page, int size) {
+        public ProductServiceDto.RetrieveSummariesCommand toCommand() {
+            return new ProductServiceDto.RetrieveSummariesCommand(
+                    brandId,
+                    com.loopers.domain.product.ProductSort.valueOf(sort.name()),
+                    new PageQuery(page, size)
+            );
+        }
+    }
+
+    public record ProductSummaryResult(
+            Long productId,
+            String name,
+            String representativeImage,
+            Long brandId,
+            String brandName,
+            Long price,
+            int likeCount,
+            boolean isSoldOut,
+            boolean isLiked
+    ) {
+        /**
+         * @param isLiked 비로그인이면 false (참고: Product-007)
+         */
+        public static ProductSummaryResult from(ProductSummary summary, boolean isLiked) {
+            return new ProductSummaryResult(
+                    summary.productId(),
+                    summary.name(),
+                    summary.representativeImage(),
+                    summary.brandId(),
+                    summary.brandName(),
+                    summary.price().getAmount(),
+                    summary.likeCount(),
+                    summary.isSoldOut(),
+                    isLiked
+            );
+        }
     }
 
     public record GetProductInfo(Long productId) {

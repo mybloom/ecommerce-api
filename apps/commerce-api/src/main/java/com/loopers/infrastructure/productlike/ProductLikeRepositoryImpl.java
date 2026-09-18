@@ -32,7 +32,7 @@ public class ProductLikeRepositoryImpl implements ProductLikeRepository {
 
     @Override
     public Set<Long> findLikedProductIds(Long memberId, List<Long> productIds) {
-        throw new UnsupportedOperationException("4단계에서 구현");
+        return Set.copyOf(productLikeJpaRepository.findLikedProductIds(memberId, productIds));
     }
 
     @Override

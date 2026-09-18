@@ -15,7 +15,6 @@ import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -136,7 +135,6 @@ class ProductV1ApiE2ETest {
     }
 
     @Nested
-    @Disabled("UseCase 가 스켈레톤이라 E2E 봉합에서 활성화")
     @DisplayName("GET /api/v1/products")
     class GetProducts {
         private static final String ENDPOINT = "/api/v1/products";

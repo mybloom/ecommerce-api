@@ -16,7 +16,6 @@ import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -128,7 +127,6 @@ class ProductUseCaseTest {
     }
 
     @Nested
-    @Disabled("Domain·Infrastructure 가 스켈레톤이라 Domain Layer 에서 활성화")
     @DisplayName("getProducts")
     class GetProducts {
 

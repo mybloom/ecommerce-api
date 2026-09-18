@@ -9,11 +9,14 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -109,6 +112,46 @@ class ProductLikeServiceTest {
 
             assertThat(query.duplicated()).isTrue();
             verify(productLikeRepository, never()).delete(any(ProductLike.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("retrieveLikedProductIds")
+    class RetrieveLikedProductIds {
+
+        @Test
+        @DisplayName("productIds가 비어 있으면 Repository를 조회하지 않고 빈 집합을 반환한다")
+        void returnsEmptySetWithoutQuery_whenProductIdsAreEmpty() {
+            // given
+            Long memberId = ProductLikeFixture.DEFAULT_MEMBER_ID;
+            List<Long> emptyProductIds = List.of();
+
+            // when
+            Set<Long> likedProductIds = productLikeService.retrieveLikedProductIds(
+                    new ProductLikeServiceDto.RetrieveLikedProductIdsCommand(memberId, emptyProductIds));
+
+            // then
+            assertThat(likedProductIds).isEmpty();
+            verify(productLikeRepository, never()).findLikedProductIds(any(), anyList());
+        }
+
+        @Test
+        @DisplayName("productIds가 있으면 회원이 좋아요한 id만 조회해 반환한다")
+        void returnsLikedIds_whenProductIdsAreGiven() {
+            // given
+            Long memberId = ProductLikeFixture.DEFAULT_MEMBER_ID;
+            Long likedProductId = 11L;
+            Long notLikedProductId = 22L;
+            List<Long> productIds = List.of(likedProductId, notLikedProductId);
+            when(productLikeRepository.findLikedProductIds(memberId, productIds))
+                    .thenReturn(Set.of(likedProductId));
+
+            // when
+            Set<Long> likedProductIds = productLikeService.retrieveLikedProductIds(
+                    new ProductLikeServiceDto.RetrieveLikedProductIdsCommand(memberId, productIds));
+
+            // then
+            assertThat(likedProductIds).containsExactly(likedProductId);
         }
     }
 }

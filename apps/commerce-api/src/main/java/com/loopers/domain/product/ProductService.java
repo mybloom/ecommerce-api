@@ -58,7 +58,7 @@ public class ProductService {
 
     @Transactional(readOnly = true)
     public PageResult<ProductSummary> retrieveSummaries(ProductServiceDto.RetrieveSummariesCommand command) {
-        throw new UnsupportedOperationException("3단계에서 구현");
+        return productRepository.findOnSaleSummaries(command.brandId(), command.sort(), command.pageQuery());
     }
 
     @Transactional

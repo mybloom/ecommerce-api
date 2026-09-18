@@ -5,7 +5,9 @@ import com.loopers.domain.productlike.ProductLikeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @RequiredArgsConstructor
 @Repository
@@ -26,6 +28,11 @@ public class ProductLikeRepositoryImpl implements ProductLikeRepository {
     @Override
     public Optional<ProductLike> findByMemberIdAndProductId(Long memberId, Long productId) {
         return productLikeJpaRepository.findByMemberIdAndProductId(memberId, productId);
+    }
+
+    @Override
+    public Set<Long> findLikedProductIds(Long memberId, List<Long> productIds) {
+        throw new UnsupportedOperationException("4단계에서 구현");
     }
 
     @Override

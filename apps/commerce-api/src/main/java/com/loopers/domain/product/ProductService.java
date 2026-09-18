@@ -1,5 +1,6 @@
 package com.loopers.domain.product;
 
+import com.loopers.domain.shared.PageResult;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +54,11 @@ public class ProductService {
     private Product findForUpdate(Long productId) {
         return productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다."));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<ProductSummary> retrieveSummaries(ProductServiceDto.RetrieveSummariesCommand command) {
+        return productRepository.findOnSaleSummaries(command.brandId(), command.sort(), command.pageQuery());
     }
 
     @Transactional

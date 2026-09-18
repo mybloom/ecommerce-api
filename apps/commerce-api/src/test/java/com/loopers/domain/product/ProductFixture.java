@@ -67,6 +67,16 @@ public class ProductFixture {
                 brandId, DEFAULT_PRICE, StockQuantity.of(stock), DEFAULT_OPENED_AT);
     }
 
+    public static Product aProductForBrandWithPrice(Long brandId, Long price) {
+        return Product.create(DEFAULT_NAME, DEFAULT_DESCRIPTION, DEFAULT_IMAGE,
+                brandId, Money.of(price), DEFAULT_STOCK, DEFAULT_OPENED_AT);
+    }
+
+    public static Product aProductForBrandWithOpenedAt(Long brandId, ZonedDateTime openedAt) {
+        return Product.create(DEFAULT_NAME, DEFAULT_DESCRIPTION, DEFAULT_IMAGE,
+                brandId, DEFAULT_PRICE, DEFAULT_STOCK, openedAt);
+    }
+
     public static Product aProductForBrandWithStatus(Long brandId, ProductStatus status) {
         Product product = aProductForBrand(brandId);
         if (status == ProductStatus.OFF_SALE) product.putOffSale();

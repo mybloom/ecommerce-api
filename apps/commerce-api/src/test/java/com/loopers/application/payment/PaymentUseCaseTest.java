@@ -10,10 +10,16 @@ import com.loopers.domain.member.MemberRepository;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderNumber;
 import com.loopers.domain.order.OrderRepository;
+import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.payment.Payment;
+import com.loopers.domain.payment.PaymentGateway;
+import com.loopers.domain.payment.PaymentGatewayDto;
 import com.loopers.domain.payment.PaymentMethod;
 import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PaymentStatus;
+import com.loopers.domain.payment.PgRejectedException;
+import com.loopers.domain.payment.PgResultUnknownException;
+import com.loopers.domain.payment.PgTransactionStatus;
 import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointRepository;
 import com.loopers.domain.point.PointServiceDto;
@@ -32,6 +38,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -44,6 +51,9 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -57,6 +67,8 @@ import static org.mockito.Mockito.when;
 class PaymentUseCaseTest {
 
     private static final int ORDER_QUANTITY = 2;
+    private static final String DEFAULT_CARD_NO = "1234-5678-9814-1451";
+    private static final String DEFAULT_TRANSACTION_KEY = "20260828:TR:0a8ec1";
     private static final Long ORDER_AMOUNT = ProductFixture.DEFAULT_PRICE.getAmount() * ORDER_QUANTITY;
 
     private Member member;
@@ -72,6 +84,13 @@ class PaymentUseCaseTest {
     private final ProductRepository productRepository;
     private final PointRepository pointRepository;
     private final DatabaseCleanUp databaseCleanUp;
+
+    /**
+     * PG는 우리 프로세스 밖이라 승인/거절을 의도적으로 만들 수 없다. 이 테스트가 보려는 것은
+     * <b>PG가 어떻게 답하든 우리가 무엇을 남기는가</b>라, 답을 고정한다 (참고: 03_외부시스템_테스트전략.md).
+     */
+    @MockitoBean
+    private PaymentGateway paymentGateway;
 
     @Autowired
     public PaymentUseCaseTest(PaymentUseCase paymentUseCase, PaymentRepository paymentRepository,
@@ -142,6 +161,19 @@ class PaymentUseCaseTest {
     }
 
     private int findStock() {
+        return productRepository.findById(product.getId()).orElseThrow().getStockQuantity().getValue();
+    }
+
+    private PaymentUseCaseDto.PayInfo aCardPayInfo(String orderNumber) {
+        return new PaymentUseCaseDto.PayInfo(
+                member.getId(), orderNumber, PaymentUseCaseDto.PaymentMethod.CARD, PaymentUseCaseDto.CardType.SAMSUNG, DEFAULT_CARD_NO);
+    }
+
+    private Order findOrder(String orderNumber) {
+        return orderRepository.findByOrderNumber(OrderNumber.of(orderNumber)).orElseThrow();
+    }
+
+    private int findStockOf(Product product) {
         return productRepository.findById(product.getId()).orElseThrow().getStockQuantity().getValue();
     }
 
@@ -300,6 +332,128 @@ class PaymentUseCaseTest {
                     () -> assertThat(failures).hasSize(1),
                     () -> assertThat(remainingBalance).isEqualTo(initialBalance - ORDER_AMOUNT)
             );
+        }
+    }
+
+    @Nested
+    @DisplayName("pay - 카드 결제")
+    class CardPay {
+
+        @Test
+        @DisplayName("PG가 승인 요청을 접수하면 결제는 CARD/PENDING으로 남고 승인 시각도 거래 식별자도 없으며 주문은 결제대기에 머문다")
+        void recordsPendingCardPayment() {
+            // given
+            when(paymentGateway.requestApproval(any())).thenReturn(
+                    new PaymentGatewayDto.Approval(DEFAULT_TRANSACTION_KEY, PgTransactionStatus.PENDING));
+            String orderNumber = anAwaitingPaymentOrderNumber();
+
+            // when
+            PaymentUseCaseDto.PayResult result = paymentUseCase.pay(aCardPayInfo(orderNumber));
+
+            // then
+            Payment pendingPayment = findPaymentOf(orderNumber);
+            Order awaitingOrder = findOrder(orderNumber);
+
+            assertAll(
+                    () -> assertThat(result.status()).isEqualTo(PaymentUseCaseDto.PaymentStatus.PENDING),
+                    () -> assertThat(pendingPayment.getMethod()).isEqualTo(PaymentMethod.CARD),
+                    () -> assertThat(pendingPayment.getStatus()).isEqualTo(PaymentStatus.PENDING),
+                    () -> assertThat(pendingPayment.getAmount()).isEqualTo(Money.of(ORDER_AMOUNT)),
+                    () -> assertThat(pendingPayment.getApprovedAt()).isNull(),
+                    () -> assertThat(pendingPayment.getTransactionKey()).isNull(),
+                    () -> assertThat(awaitingOrder.getStatus()).isEqualTo(OrderStatus.AWAITING_PAYMENT)
+            );
+        }
+
+        @Test
+        @DisplayName("카드 결제는 포인트를 차감하지 않는다")
+        void doesNotUsePoint_whenMethodIsCard() {
+            // given
+            when(paymentGateway.requestApproval(any())).thenReturn(
+                    new PaymentGatewayDto.Approval(DEFAULT_TRANSACTION_KEY, PgTransactionStatus.PENDING));
+            Long initialBalance = ORDER_AMOUNT + 50_000L;
+            aChargedPoint(initialBalance);
+            String orderNumber = anAwaitingPaymentOrderNumber();
+
+            // when
+            paymentUseCase.pay(aCardPayInfo(orderNumber));
+
+            // then
+            Long remainingBalance = findBalance();
+
+            assertThat(remainingBalance).isEqualTo(initialBalance);
+        }
+
+        @Test
+        @DisplayName("PG가 거절하면 결제는 FAILED로 남고 재고가 복원되며 주문은 결제실패가 된다")
+        void restoresStock_whenPgRejects() {
+            // given
+            when(paymentGateway.requestApproval(any()))
+                    .thenThrow(new PgRejectedException("PG 승인 요청이 거절되었습니다."));
+            int initialStock = ProductFixture.DEFAULT_STOCK.getValue();
+            String orderNumber = anAwaitingPaymentOrderNumber();
+
+            // when
+            Throwable thrown = catchThrowable(() -> paymentUseCase.pay(aCardPayInfo(orderNumber)));
+
+            // then
+            Payment failedPayment = findPaymentOf(orderNumber);
+            Order failedOrder = findOrder(orderNumber);
+            int restoredStock = findStockOf(product);
+
+            assertAll(
+                    () -> assertThat(thrown).isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.BAD_GATEWAY)),
+                    () -> assertThat(failedPayment.getStatus()).isEqualTo(PaymentStatus.FAILED),
+                    () -> assertThat(failedPayment.getFailureReason()).isNotBlank(),
+                    () -> assertThat(failedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED),
+                    () -> assertThat(restoredStock).isEqualTo(initialStock)
+            );
+        }
+
+        /**
+         * PG가 처리했는지 모르는 상태에서 실패로 확정하면, PG가 승인한 결제를 되돌릴 수 없게 만든다.
+         * <b>PgResultUnknownException이 CoreException이 아니라는 사실이 이 동작을 강제한다</b>
+         * (참고: Payment-010).
+         */
+        @Test
+        @DisplayName("PG 응답을 받지 못하면 보상이 걸리지 않아 결제는 PENDING, 주문은 결제대기, 재고는 묶인 채로 남는다")
+        void keepsPending_whenPgResultIsUnknown() {
+            // given
+            when(paymentGateway.requestApproval(any()))
+                    .thenThrow(new PgResultUnknownException("PG 응답을 받지 못했습니다.", new RuntimeException()));
+            int initialStock = ProductFixture.DEFAULT_STOCK.getValue();
+            String orderNumber = anAwaitingPaymentOrderNumber();
+
+            // when
+            Throwable thrown = catchThrowable(() -> paymentUseCase.pay(aCardPayInfo(orderNumber)));
+
+            // then
+            Payment pendingPayment = findPaymentOf(orderNumber);
+            Order awaitingOrder = findOrder(orderNumber);
+            int heldStock = findStockOf(product);
+
+            assertAll(
+                    () -> assertThat(thrown).isNotInstanceOf(CoreException.class),
+                    () -> assertThat(pendingPayment.getStatus()).isEqualTo(PaymentStatus.PENDING),
+                    () -> assertThat(pendingPayment.getFailureReason()).isNull(),
+                    () -> assertThat(awaitingOrder.getStatus()).isEqualTo(OrderStatus.AWAITING_PAYMENT),
+                    () -> assertThat(heldStock).isEqualTo(initialStock - ORDER_QUANTITY)
+            );
+        }
+
+        @Test
+        @DisplayName("포인트 결제는 PG를 부르지 않는다")
+        void doesNotCallPg_whenMethodIsPoint() {
+            // given
+            aChargedPoint(ORDER_AMOUNT);
+            String orderNumber = anAwaitingPaymentOrderNumber();
+
+            // when
+            paymentUseCase.pay(aPayInfo(orderNumber));
+
+            // then
+            verifyNoInteractions(paymentGateway);
         }
     }
 }

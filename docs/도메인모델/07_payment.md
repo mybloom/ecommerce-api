@@ -93,8 +93,6 @@
 
 **CARD — 콜백이 종결시킨다**
 
-> 아래는 명세이며 이번 구현 범위 밖이다. UC-2와 함께 만든다.
-
 **T1. 승인 요청** — 커밋된다
 
 4. `PENDING` 결제를 저장하고 **커밋한다.** PG를 부르기 전에 커밋한다
@@ -559,17 +557,18 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
 
 ### C.3. 구현 현황
 
-> UC-1의 POINT 경로는 구현되어 있다. CARD와 UC-2(콜백)는 명세만 있고 코드는 없다.
+> UC-1의 POINT·CARD 경로와 UC-2(콜백)가 구현되어 있다. 결제 수단은 전략으로 나뉜다.
 
 | 대상 | 상태 |
 |---|---|
 | `domain/order/OrderStatus.java` | `AWAITING_PAYMENT → {PAID, PAYMENT_FAILED}` 전이 개방 완료 |
 | `domain/order/Order.java` | `paidAt`, `pay()`, `markPaymentFailed()` 추가 완료 |
 | `domain/product/Product.java` | `increaseStock(quantity)` 추가 완료 |
-| `domain/payment` | `Payment`, `PaymentStatus`, `PaymentService`, `PaymentRepository` 완료. **`PaymentMethod`는 `POINT`만 있다** — CARD는 UC-2와 함께 추가한다 |
-| `application/payment` | `PaymentUseCase` + `PaymentProcessor`(T0/T1/T2) 완료 |
-| `interfaces/api/payment` | 결제 요청 엔드포인트 완료. 콜백 엔드포인트는 없다 |
-| PG 클라이언트 | 없음. UC-2와 함께 만든다 |
+| `domain/payment` | `Payment`(수단별 `transactionKey` 불변식 포함), `PaymentStatus`, `PaymentService`, `PaymentRepository` 완료. `PaymentMethod`에 `CARD`, `CardType`·`PgTransactionStatus` 추가. PG 포트 `PaymentGateway`와 실패 예외 3종(Payment-010) |
+| `application/payment` | `PaymentUseCase` + `PaymentProcessor`(T0/T2, 콜백 종결) 완료. 승인(T1)은 `PaymentStrategy` 구현이 가진다 — `PointPaymentStrategy`, `CardPaymentStrategy` |
+| `interfaces/api/payment` | 결제 요청(카드 정보 조건부 검증 포함)과 콜백 엔드포인트 완료 |
+| `infrastructure/payment` | `PgSimulatorPaymentGateway` 어댑터 완료. PG 응답을 세 예외 타입으로 번역한다 |
+| 미구현 | 대사 배치, PG 요청 재시도 (참고: C.2). `PaymentMethod.isSettledInRequest()`는 수단 분기를 전략이 가져가 만들지 않았다 |
 
 > `OrderStatusTest.throwsConflict_whenSourceIsNotPending`은 전이를 열어도 **빨간불을 내지 않았다.** 목표 상태를 `AWAITING_PAYMENT`와 `ORDER_FAILED` 둘만 검사해 새로 열린 `PAID`·`PAYMENT_FAILED`와 겹치지 않았기 때문이다. 거짓이 된 것은 DisplayName의 "어디로도 전이할 수 없고"였다.
 > 지금은 출발을 실제 종결 상태로 좁히고 **목표는 `values()` 전부를 훑도록** 고쳤다. 같은 실수가 다시 조용히 지나가지 않는다.

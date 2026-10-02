@@ -9,8 +9,6 @@ import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentMethod;
 import com.loopers.domain.payment.PaymentService;
 import com.loopers.domain.payment.PaymentServiceDto;
-import com.loopers.domain.point.PointService;
-import com.loopers.domain.point.PointServiceDto;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductService;
 import com.loopers.domain.product.ProductServiceDto;
@@ -22,7 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.jspecify.annotations.Nullable;
 
 /**
- * 접수(T0)·승인(T1)·실패 처리(T2)를 각각 독립 트랜잭션으로 수행한다.
+ * 수단과 무관한 접수(T0)와 실패 처리(T2)를 각각 독립 트랜잭션으로 수행한다.
+ * 승인(T1)은 수단마다 달라 PaymentStrategy 구현이 가진다.
  * UseCase에 트랜잭션이 없으므로 이 컴포넌트의 메서드 하나하나가 곧 트랜잭션 경계다.
  * <p>
  * 접수를 별도 트랜잭션으로 올린 이유는 두 가지다. 승인(T1)이 롤백되면 그 안에서 만든 Payment 행도 함께
@@ -35,7 +34,6 @@ public class PaymentProcessor {
 
     private final PaymentService paymentService;
     private final OrderService orderService;
-    private final PointService pointService;
     private final ProductService productService;
 
     /**
@@ -49,20 +47,6 @@ public class PaymentProcessor {
                 order.getId(), info.memberId(),
                 PaymentMethod.valueOf(info.method().name()),
                 order.getTotalAmount()));
-    }
-
-    /**
-     * T1. 승인 — 커밋된다. 포인트 차감이 이 안에 있으므로 실패하면 차감분도 함께 롤백된다.
-     */
-    @Transactional
-    public Payment approve(Payment accepted, Long memberId) {
-        pointService.use(new PointServiceDto.UseCommand(memberId, accepted.getAmount()));
-
-        // POINT 결제에는 PG 거래 식별자가 없다 (참고: 07_payment.md B.1)
-        Payment approved = paymentService.approve(new PaymentServiceDto.ApproveCommand(accepted.getId(), null));
-        orderService.pay(new OrderServiceDto.PayCommand(accepted.getOrderId()));
-
-        return approved;
     }
 
     /**

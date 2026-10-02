@@ -239,10 +239,13 @@ class PaymentUseCaseTest {
 
             PaymentProcessor failingProcessor = mock(PaymentProcessor.class);
             when(failingProcessor.accept(any())).thenReturn(mock(Payment.class));
-            when(failingProcessor.approve(any(), any())).thenThrow(approveFailure);
             when(failingProcessor.markFailed(any(), any(), any())).thenThrow(compensationFailure);
 
-            PaymentUseCase useCase = new PaymentUseCase(failingProcessor);
+            PaymentStrategy failingStrategy = mock(PaymentStrategy.class);
+            when(failingStrategy.method()).thenReturn(PaymentMethod.POINT);
+            when(failingStrategy.approve(any(), any())).thenThrow(approveFailure);
+
+            PaymentUseCase useCase = new PaymentUseCase(failingProcessor, new PaymentStrategies(List.of(failingStrategy)));
 
             // when
             Throwable thrown = catchThrowable(() -> useCase.pay(aPayInfo("20260827-A3F9K2QP")));

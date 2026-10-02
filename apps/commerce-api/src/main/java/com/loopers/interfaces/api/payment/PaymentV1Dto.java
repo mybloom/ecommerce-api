@@ -4,6 +4,7 @@ import com.loopers.application.payment.PaymentUseCaseDto;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 import java.time.ZonedDateTime;
 import org.jspecify.annotations.Nullable;
@@ -22,12 +23,14 @@ public class PaymentV1Dto {
 
             PaymentUseCaseDto.@Nullable CardType cardType,
 
+            @Pattern(regexp = "^\\d{4}-\\d{4}-\\d{4}-\\d{4}$",
+                    message = "카드 번호는 xxxx-xxxx-xxxx-xxxx 형식이어야 합니다.")
             @Nullable String cardNo
     ) {
         /**
          * 카드 정보는 수단이 CARD일 때만 필수라 필드 단위 어노테이션으로 표현할 수 없다.
          * <p>
-         * 카드 번호의 형식은 검증하지 않는다 — 수단별 검증 규칙은 아직 보류다 (참고: C.2).
+         * 형식 자체는 @Pattern이 본다. 여기서는 <b>있는지 없는지</b>만 판정한다 (참고: Payment-008).
          */
         @AssertTrue(message = "카드 결제는 카드 종류와 카드 번호가 필수입니다.")
         public boolean isCardInfoPresent() {

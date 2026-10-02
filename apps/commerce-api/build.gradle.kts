@@ -44,3 +44,17 @@ dependencies {
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
 }
+
+// 실제 pg-simulator(8082)를 부르는 테스트는 기본 스위트에서 뺀다.
+// 외부 프로세스가 필요하고 PG가 40% 확률로 거절해 결과가 매번 달라진다.
+tasks.test {
+    useJUnitPlatform { excludeTags("external") }
+}
+
+tasks.register<Test>("externalTest") {
+    description = "pg-simulator 가 8082 에 떠 있어야 한다"
+    group = "verification"
+    useJUnitPlatform { includeTags("external") }
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+}

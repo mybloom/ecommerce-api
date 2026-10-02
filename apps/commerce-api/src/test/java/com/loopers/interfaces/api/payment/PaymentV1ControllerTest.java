@@ -151,6 +151,24 @@ class PaymentV1ControllerTest {
         }
 
         @Test
+        @DisplayName("카드 번호 형식이 어긋나면 400 Bad Request를 반환한다")
+        void returnsBadRequest_whenCardNoFormatIsInvalid() throws Exception {
+            // given
+            long memberId = 1L;
+            String orderNumber = "20260827-A3F9K2QP";
+            String malformedCardNo = "1234-5678";
+
+            String requestBody = aCardRequestBody(orderNumber, PaymentUseCaseDto.CardType.SAMSUNG, malformedCardNo);
+
+            // when & then
+            mockMvc.perform(post(ENDPOINT)
+                            .header(HEADER_OF_MEMBER_ID, memberId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(requestBody))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
         @DisplayName("지원하지 않는 카드 종류면 400 Bad Request를 반환한다")
         void returnsBadRequest_whenCardTypeIsNotSupported() throws Exception {
             // given

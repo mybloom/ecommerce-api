@@ -118,7 +118,7 @@ class PaymentV1ApiE2ETest {
     }
 
     private ResponseEntity<ApiResponse<PaymentV1Dto.PayResponse>> requestPayment(Long memberId, String orderNumber) {
-        PaymentV1Dto.PayRequest request = new PaymentV1Dto.PayRequest(orderNumber, PaymentUseCaseDto.PaymentMethod.POINT);
+        PaymentV1Dto.PayRequest request = new PaymentV1Dto.PayRequest(orderNumber, PaymentUseCaseDto.PaymentMethod.POINT, null, null);
         ParameterizedTypeReference<ApiResponse<PaymentV1Dto.PayResponse>> responseType =
                 new ParameterizedTypeReference<>() {};
 

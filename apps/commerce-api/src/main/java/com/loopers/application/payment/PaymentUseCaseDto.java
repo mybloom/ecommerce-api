@@ -12,17 +12,44 @@ public class PaymentUseCaseDto {
      * 도메인에서 상수를 바꿔도 여기서 변환이 깨지며 드러난다.
      */
     public enum PaymentMethod {
-        POINT
+        POINT, CARD
     }
 
     public enum PaymentStatus {
         PENDING, APPROVED, FAILED
     }
 
+    public enum CardType {
+        SAMSUNG, KB, HYUNDAI
+    }
+
+    public enum PgTransactionStatus {
+        PENDING, SUCCESS, FAILED
+    }
+
     /**
      * 결제 금액은 입력에 없다. 주문의 totalAmount를 그대로 쓴다 (참고: 07_payment.md Payment-002).
      */
-    public record PayInfo(Long memberId, String orderNumber, PaymentMethod method) {
+    public record PayInfo(
+            Long memberId,
+            String orderNumber,
+            PaymentMethod method,
+            @Nullable CardType cardType,
+            @Nullable String cardNo
+    ) {
+    }
+
+    /**
+     * orderId는 PG가 쓰는 이름이며 값은 우리 주문번호다.
+     * amount는 <b>대조용이며 결제 금액의 근거가 아니다</b> (참고: Payment-002).
+     */
+    public record PgCallbackInfo(
+            String transactionKey,
+            String orderId,
+            PgTransactionStatus status,
+            Long amount,
+            @Nullable String reason
+    ) {
     }
 
     /**

@@ -115,7 +115,7 @@ class PaymentUseCaseTest {
     }
 
     private PaymentUseCaseDto.PayInfo aPayInfo(String orderNumber) {
-        return new PaymentUseCaseDto.PayInfo(member.getId(), orderNumber, PaymentUseCaseDto.PaymentMethod.POINT);
+        return new PaymentUseCaseDto.PayInfo(member.getId(), orderNumber, PaymentUseCaseDto.PaymentMethod.POINT, null, null);
     }
 
     private void aChargedPoint(Long balance) {

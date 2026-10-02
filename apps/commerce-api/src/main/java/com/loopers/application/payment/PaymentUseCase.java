@@ -37,6 +37,13 @@ public class PaymentUseCase {
     }
 
     /**
+     * PG가 알려온 카드 승인 결과로 결제와 주문을 종결한다 (참고: UC-2).
+     */
+    public void handleCallback(PaymentUseCaseDto.PgCallbackInfo info) {
+        throw new UnsupportedOperationException("6단계에서 구현");
+    }
+
+    /**
      * T1이 실패하면 T2로 결제를 실패로 남기고 재고를 복원한 뒤, 발생한 예외는 그대로 전파한다.
      * <b>여기서 잡은 예외는 재시도하지 않는다.</b>
      * <p>

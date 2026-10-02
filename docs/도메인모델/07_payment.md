@@ -613,15 +613,15 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
 
 ### D.2. 지점별 판정
 
-| 지점 | 거래가 생겼나 | 지금 분류 | 처리 | 판정 |
-|---|---|---|---|---|
-| ① 연결 실패 | **없음 (확실)** | `PgNotProcessedException` | FAILED + 재고 복원 | ✅ |
-| ② 프록시 502·504 | **모름** | `PgRejectedException` | FAILED + 재고 복원 | ❌ |
-| ③ PG 429·503 | 없음 (관례상) | `PgNotProcessedException` | FAILED + 재고 복원 | ✅ 가정 |
-| ④ 저장 전 500 | 없음 | `PgRejectedException` | FAILED + 재고 복원 | ✅ 시뮬레이터 한정 |
-| ⑤ 저장 후 500 | **있음** | `PgRejectedException` | FAILED + 재고 복원 | ❌ |
-| ⑥ read timeout | **모름** | `PgResultUnknownException` | PENDING 유지 | ✅ |
-| ⑦ 2xx + 해석 실패 | **있음** | `PgRejectedException` | FAILED + 재고 복원 | ❌ |
+| 지점 | 응답 코드의 뜻 | 거래가 생겼나 | 지금 분류 | 처리 | 판정 |
+|---|---|---|---|---|---|
+| ① 연결 실패 | 응답 없음. 연결 자체가 안 맺힘 | **없음 (확실)** | `PgNotProcessedException` | FAILED + 재고 복원 | ✅ |
+| ② 프록시 502·504 | **502 Bad Gateway**: 프록시가 뒤 서버(PG)에서 잘못된 응답을 받았거나 연결이 끊김 · **504 Gateway Timeout**: 프록시가 PG의 응답을 시간 안에 받지 못함 | **모름** | `PgRejectedException` | FAILED + 재고 복원 | ❌ |
+| ③ PG 429·503 | **429 Too Many Requests**: 처리율 제한에 걸려 요청을 받지 않음 · **503 Service Unavailable**: 과부하·점검으로 지금은 요청을 받을 수 없음 | 없음 (관례상) | `PgNotProcessedException` | FAILED + 재고 복원 | ✅ 가정 |
+| ④ 저장 전 500 | **500 Internal Server Error**: PG 내부에서 처리 중 예외 | 없음 | `PgRejectedException` | FAILED + 재고 복원 | ✅ 시뮬레이터 한정 |
+| ⑤ 저장 후 500 | 위와 같은 500. 코드만으로는 ④와 구분되지 않음 | **있음** | `PgRejectedException` | FAILED + 재고 복원 | ❌ |
+| ⑥ read timeout | 응답 없음. 요청은 보냈으나 응답이 오지 않음 | **모름** | `PgResultUnknownException` | PENDING 유지 | ✅ |
+| ⑦ 2xx + 해석 실패 | **2xx**: PG가 요청을 받아 처리함(거래 생성) | **있음** | `PgRejectedException` | FAILED + 재고 복원 | ❌ |
 
 - ④ — 시뮬레이터는 40% 확률의 500을 거래 저장(`createTransaction`) **전에** 던진다 (`PaymentApi.kt`)
 - ⑤ — 같은 시뮬레이터라도 저장·커밋 뒤 응답을 만들다 예외가 나면 catch-all 핸들러(`ApiControllerAdvice`)가 500으로 돌려준다

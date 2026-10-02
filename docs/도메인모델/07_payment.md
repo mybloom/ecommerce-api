@@ -105,12 +105,15 @@
 
 **T2'. PG 요청이 실패했을 때** — 갈리는 기준은 "요청이 닿았느냐"가 아니라 **"PG에 거래가 안 생겼음이 확실하냐"**다 (참고: Payment-008).
 
-| 상황 | 거래가 생겼나 | 처리 | 응답 |
-|---|---|---|---|
-| 카드번호 형식 오류 | — | PG를 부르기 전에 거절. 결제 행조차 만들지 않는다 | 400 |
-| PG가 거절 (4xx·5xx) | 확실히 안 생김 | POINT의 T2와 같은 실패 처리 | **502** |
-| 연결 불가 · **connect timeout** · DNS 실패 | 확실히 안 생김 | 위와 같음 | **502** |
-| **read timeout** | **모름** | **아무것도 하지 않는다.** 결제는 `PENDING`, 주문은 `AWAITING_PAYMENT`로 남는다 | 500 |
+| 상황 | 거래가 생겼나 | 예외 (참고: Payment-010) | 처리 | 응답 |
+|---|---|---|---|---|
+| 카드번호 형식 오류 | — | — | PG를 부르기 전에 거절. 결제 행조차 만들지 않는다 | 400 |
+| PG가 거절 (4xx·5xx) | 확실히 안 생김 | `PgRejectedException` | POINT의 T2와 같은 실패 처리 | **502** |
+| 연결 불가 · **connect timeout** · DNS 실패 · `429`·`503` | 확실히 안 생김 | `PgNotProcessedException` | 위와 같음. **재시도가 안전한 유일한 타입이다** | **502** |
+| **read timeout** | **모름** | `PgResultUnknownException` | **아무것도 하지 않는다.** 결제는 `PENDING`, 주문은 `AWAITING_PAYMENT`로 남는다 | 500 |
+
+> **앞의 두 줄은 응답이 같지만 예외 타입이 다르다.** 응답 코드는 클라이언트용이고 재시도 여부는
+> 우리 내부 판단이라 서로 다른 축이다 (참고: Payment-010).
 
 > **타임아웃을 하나로 뭉뚱그리지 않는다.** `connect timeout`은 TCP 핸드셰이크가 끝나지 않아 요청이
 > 나가지도 못한 것이라 "확실히 안 생김"에 속한다. 요청을 보낸 뒤 응답을 못 받은 `read timeout`만
@@ -461,6 +464,38 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
 - **관련 결정**: Payment-002, Payment-008
 - **재검토 시점**: 재결제 경로가 열려 실패 사유가 실제 행동으로 이어질 때, 또는 PG를 교체할 때.
 
+#### Payment-010. PG 실패는 세 예외 타입으로 가른다 — HTTP 상태가 같아도 타입은 다르다
+- **일시**: 2026-08-28
+- **결정**: PG 승인 요청의 실패를 **"PG가 요청을 처리했는가"** 기준으로 세 타입으로 나눈다. 502로 나가는 둘도 타입은 다르다.
+
+    | 예외 | 사실 | 언제 | 상속 |
+    |---|---|---|---|
+    | `PgNotProcessedException` | **처리되지 않았음이 확실** | 연결 불가, `connect timeout`, DNS 실패, `429`·`503` | `CoreException(BAD_GATEWAY)` |
+    | `PgRejectedException` | **처리했고 거절했다** | PG의 4xx·5xx 응답 | `CoreException(BAD_GATEWAY)` |
+    | `PgResultUnknownException` | **처리했는지 모른다** | `read timeout` | **`CoreException`이 아니다** |
+
+    타입이 정해지면 나머지는 따라온다.
+
+    | 예외 | 결제 종결·재고 복원 | 재시도 | 서킷 기록 | 응답 |
+    |---|---|---|---|---|
+    | `PgNotProcessedException` | O | **O** | O | 502 |
+    | `PgRejectedException` | O | X | X | 502 |
+    | `PgResultUnknownException` | **X** (`PENDING` 유지) | X | O | 500 |
+
+- **이유**:
+    - **HTTP 상태로는 재시도 가능 여부를 표현할 수 없다.** 앞의 둘은 사용자에게 똑같이 502지만, 하나는 요청이 나가지도 못해 다시 보내도 되고 다른 하나는 PG가 이미 판단을 내린 것이라 다시 보내도 같은 답이다. **응답 코드는 클라이언트용이고 재시도는 우리 내부 판단이라 서로 다른 축이다**
+    - `resilience4j`는 **예외 타입으로 정책을 건다.** `retryExceptions`에 `PgNotProcessedException` 하나만 올리면 되고, 서킷은 `recordExceptions`에 `PgNotProcessedException`·`PgResultUnknownException`을 올린다. 타입이 아니라 상태 코드로 갈랐다면 어댑터 안에 분기를 또 두어야 한다
+    - **`PgRejectedException`을 서킷에서 빼는 이유**는 그것이 PG의 건강 상태가 아니라 **우리 요청의 문제**이기 때문이다. 우리가 잘못된 요청을 반복해 회로를 여는 것은 진단을 흐린다
+    - **`PgResultUnknownException`이 `CoreException`을 상속하지 않는 것이 핵심 장치다.** 보상은 `catch (CoreException)`에 걸려 있으므로(참고: UC-1의 T2), 이 타입은 자동으로 보상을 건너뛴다. "종결하지 않는다"가 정책이 아니라 **타입으로 강제된다**
+    - `429`·`503`을 `PgRejectedException`이 아니라 `PgNotProcessedException`에 둔 이유는, 그것이 거절이 아니라 **"지금은 못 받는다"**이기 때문이다. 거래가 생기지 않았고 잠시 뒤 재시도가 정확히 옳은 대응이다
+- **영향**:
+    - 어댑터의 책임이 **"응답을 세 타입 중 하나로 번역하는 것"**으로 좁아진다. 재시도할지 종결할지는 어댑터가 모른다
+    - **PG 5xx를 재시도하지 않는다.** 지금 시뮬레이터는 거래 생성 전에 거절하므로 재시도해도 안전하지만, 거래를 만든 뒤 5xx를 주는 PG로 바꾸면 이중 승인이 된다. 안전한 쪽으로 둔다 (참고: Payment-008)
+    - `read timeout`과 `connect timeout`이 같은 `SocketTimeoutException`인데 **다른 타입으로 번역된다.** 어댑터가 원인을 구분하지 못하면 이 설계가 무너지므로, 구분이 이 결정의 전제다
+    - 예외가 셋으로 늘어 어댑터 테스트도 셋이 된다
+- **관련 결정**: Payment-008, Payment-009
+- **재검토 시점**: `resilience4j`를 실제로 적용할 때 — 재시도 횟수·백오프·서킷 임계치를 이 타입 위에서 정한다.
+
 ### C.2. 보류된 결정
 
 > 아직 결정되지 않았거나 **앞으로 다룰 항목**을 모은다. 결정되면 C.1로 이동한다.
@@ -494,11 +529,14 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
     |---|---|---|
     | **콜백 재전송** (PG → 우리) | ✅ `isFinalized()`로 멱등 | **이미 하고 있다** (참고: Payment-005) |
     | **보상(T2)의 락 타임아웃·데드락** | ✅ 트랜잭션이 통째로 롤백된다 | **가장 값지다** (아래) |
-    | 연결 불가 · `connect timeout` · DNS 실패 | ✅ 요청이 나가지 못했다 | 실익이 작다. PG가 내려가 있으면 몇 번을 해도 실패한다 |
-    | PG `429`·`503` + `Retry-After` | ✅ 거절이라 거래가 없다 | 실제 PG에서는 흔하다. 지금 시뮬레이터에는 없다 |
-    | `read timeout` | ❌ 이중 승인 위험 | — |
-    | PG 4xx, `orderId` UNIQUE 위반 | ✅ | 같은 요청이라 같은 결과. **무의미** |
-    | PG 5xx | ⚠️ 거래를 만든 뒤 5xx를 주는 PG면 위험 | — |
+    | **`PgNotProcessedException`** (연결 불가·`connect timeout`·DNS·`429`·`503`) | ✅ 요청이 처리되지 않았다 | 타입으로 이미 갈라뒀다 (참고: Payment-010). PG가 내려가 있으면 몇 번을 해도 실패한다 |
+    | `PgResultUnknownException` (`read timeout`) | ❌ 이중 승인 위험 | — |
+    | `PgRejectedException` (PG 4xx), `orderId` UNIQUE 위반 | ✅ | 같은 요청이라 같은 결과. **무의미** |
+    | `PgRejectedException` (PG 5xx) | ⚠️ 거래를 만든 뒤 5xx를 주는 PG면 위험 | — |
+
+    **`resilience4j`를 적용할 때는 `retryExceptions`에 `PgNotProcessedException` 하나만 올리면 된다.**
+    서킷은 `recordExceptions`에 `PgNotProcessedException`·`PgResultUnknownException`을 올리고
+    `PgRejectedException`은 뺀다 — 그것은 PG의 건강이 아니라 우리 요청의 문제다.
 
     **보상(T2) 재시도가 가장 값진 이유** — `markFailed()`가 재고를 복원할 때 비관적 락
     (`@Lock(PESSIMISTIC_WRITE)`)을 잡는다. 다른 주문과 경합하면 락 타임아웃이 날 수 있고, 그러면

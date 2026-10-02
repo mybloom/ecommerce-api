@@ -24,6 +24,15 @@ public class PaymentService {
         return paymentRepository.save(payment);
     }
 
+    /**
+     * 콜백은 주문번호로만 대상을 특정하므로 주문에서 결제로 찾아가는 경로가 필요하다 (참고: UC-2).
+     */
+    @Transactional(readOnly = true)
+    public Payment findByOrderId(PaymentServiceDto.FindByOrderIdCommand command) {
+        return paymentRepository.findByOrderId(command.orderId())
+                .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "결제를 찾을 수 없습니다."));
+    }
+
     @Transactional
     public Payment approve(PaymentServiceDto.ApproveCommand command) {
         Payment payment = findExistingPayment(command.paymentId());

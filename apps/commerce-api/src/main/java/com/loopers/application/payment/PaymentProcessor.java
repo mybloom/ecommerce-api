@@ -66,6 +66,50 @@ public class PaymentProcessor {
     }
 
     /**
+     * PG가 알려온 결과로 결제와 주문을 종결한다. <b>조회·판정·적용을 한 트랜잭션에 둔다</b> —
+     * 나누면 두 콜백이 나란히 종결 판정을 통과해 같은 결제를 두 번 건드릴 수 있다 (참고: UC-2).
+     */
+    @Transactional
+    public void settleByCallback(PaymentUseCaseDto.PgCallbackInfo info) {
+        Order order = findOrder(info.orderId());
+        Payment payment = paymentService.findByOrderId(
+                new PaymentServiceDto.FindByOrderIdCommand(order.getId()));
+
+        // 종결된 결제에 두 번째 결과를 적용하지 않는다. 재고가 두 번 복원되는 것을 막는다 (참고: Payment-005)
+        if (payment.isFinalized() || info.status() == PaymentUseCaseDto.PgTransactionStatus.PENDING) {
+            return;
+        }
+
+        boolean amountMatches = order.getTotalAmount().getAmount().equals(info.amount());
+
+        if (info.status() == PaymentUseCaseDto.PgTransactionStatus.SUCCESS && amountMatches) {
+            paymentService.approve(
+                    new PaymentServiceDto.ApproveCommand(payment.getId(), info.transactionKey()));
+            orderService.pay(new OrderServiceDto.PayCommand(order.getId()));
+            return;
+        }
+
+        paymentService.fail(
+                new PaymentServiceDto.FailCommand(payment.getId(), failureReasonOf(info, amountMatches)));
+        restoreStock(order);
+        orderService.markPaymentFailed(new OrderServiceDto.MarkPaymentFailedCommand(order.getId()));
+    }
+
+    /**
+     * PG가 보낸 사유는 사용자가 행동할 수 있는 정보라 그대로 남긴다. 다만 <b>금액이 어긋난 경우는
+     * PG가 성공이라 했으므로 그쪽에 사유가 없어</b> 우리 문구를 쓴다 (참고: Payment-009).
+     */
+    private String failureReasonOf(PaymentUseCaseDto.PgCallbackInfo info, boolean amountMatches) {
+        if (!amountMatches) {
+            return "승인 금액이 주문 금액과 일치하지 않습니다.";
+        }
+
+        return (info.reason() == null || info.reason().isBlank())
+                ? "PG 승인이 거절되었습니다."
+                : info.reason();
+    }
+
+    /**
      * 남의 주문은 존재 자체를 노출하지 않으므로 403이 아니라 404다 (참고: 06_order.md UC-3).
      */
     private Order findPayableOrder(String orderNumber, Long memberId) {

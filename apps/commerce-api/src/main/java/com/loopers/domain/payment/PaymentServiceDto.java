@@ -8,6 +8,9 @@ public class PaymentServiceDto {
     public record RequestCommand(Long orderId, Long memberId, PaymentMethod method, Money amount) {
     }
 
+    public record FindByOrderIdCommand(Long orderId) {
+    }
+
     public record ApproveCommand(Long paymentId, @Nullable String transactionKey) {
     }
 

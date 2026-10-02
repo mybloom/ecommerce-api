@@ -38,9 +38,12 @@ public class PaymentUseCase {
 
     /**
      * PG가 알려온 카드 승인 결과로 결제와 주문을 종결한다 (참고: UC-2).
+     * <p>
+     * <b>실패를 삼키지 않는다.</b> 예외가 컨트롤러까지 올라가 5xx가 되어야 PG가 재전송한다.
+     * 200을 주면 재전송이 오지 않아 결제가 PENDING에 영구히 남는다 (참고: Payment-005).
      */
     public void handleCallback(PaymentUseCaseDto.PgCallbackInfo info) {
-        throw new UnsupportedOperationException("6단계에서 구현");
+        paymentProcessor.settleByCallback(info);
     }
 
     /**

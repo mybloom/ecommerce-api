@@ -8,6 +8,7 @@ public class PaymentFixture {
     public static final Long DEFAULT_MEMBER_ID = 1L;
     public static final Money DEFAULT_AMOUNT = Money.of(200_000L);
     public static final String DEFAULT_FAILURE_REASON = "잔액이 부족합니다.";
+    public static final String DEFAULT_TRANSACTION_KEY = "20260828:TR:0a8ec1";
 
     public static Payment aRequestedPayment() {
         return Payment.request(DEFAULT_ORDER_ID, DEFAULT_MEMBER_ID, PaymentMethod.POINT, DEFAULT_AMOUNT);
@@ -15,6 +16,10 @@ public class PaymentFixture {
 
     public static Payment aRequestedPaymentOf(Long memberId) {
         return Payment.request(DEFAULT_ORDER_ID, memberId, PaymentMethod.POINT, DEFAULT_AMOUNT);
+    }
+
+    public static Payment aRequestedCardPayment() {
+        return Payment.request(DEFAULT_ORDER_ID, DEFAULT_MEMBER_ID, PaymentMethod.CARD, DEFAULT_AMOUNT);
     }
 
     public static Payment anApprovedPayment() {

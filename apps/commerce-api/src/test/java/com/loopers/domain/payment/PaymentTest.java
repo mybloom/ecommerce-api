@@ -91,6 +91,62 @@ class PaymentTest {
             assertThat(payment.getTransactionKey()).isNull();
         }
 
+
+        @Test
+        @DisplayName("카드 결제는 PG 거래 식별자와 함께 승인된다")
+        void recordsTransactionKey_whenMethodIsCard() {
+            // given
+            Payment payment = PaymentFixture.aRequestedCardPayment();
+            String transactionKey = PaymentFixture.DEFAULT_TRANSACTION_KEY;
+
+            // when
+            payment.approve(transactionKey);
+
+            // then
+            assertAll(
+                    () -> assertThat(payment.getStatus()).isEqualTo(PaymentStatus.APPROVED),
+                    () -> assertThat(payment.getTransactionKey()).isEqualTo(transactionKey)
+            );
+        }
+
+        @Test
+        @DisplayName("카드 결제를 PG 거래 식별자 없이 승인하면 BAD_REQUEST가 나고 결제는 승인대기로 남는다")
+        void staysPending_whenCardPaymentHasNoTransactionKey() {
+            // given
+            Payment payment = PaymentFixture.aRequestedCardPayment();
+            String missingTransactionKey = null;
+
+            // when
+            Throwable thrown = catchThrowable(() -> payment.approve(missingTransactionKey));
+
+            // then
+            assertAll(
+                    () -> assertThat(thrown).isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST)),
+                    () -> assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING),
+                    () -> assertThat(payment.getApprovedAt()).isNull()
+            );
+        }
+
+        @Test
+        @DisplayName("포인트 결제에 PG 거래 식별자를 넘기면 BAD_REQUEST가 나고 결제는 승인대기로 남는다")
+        void staysPending_whenPointPaymentHasTransactionKey() {
+            // given
+            Payment payment = PaymentFixture.aRequestedPayment();
+            String unexpectedTransactionKey = PaymentFixture.DEFAULT_TRANSACTION_KEY;
+
+            // when
+            Throwable thrown = catchThrowable(() -> payment.approve(unexpectedTransactionKey));
+
+            // then
+            assertAll(
+                    () -> assertThat(thrown).isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST)),
+                    () -> assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING),
+                    () -> assertThat(payment.getTransactionKey()).isNull()
+            );
+        }
+
         @Test
         @DisplayName("이미 승인된 결제를 다시 승인하면 CONFLICT 예외가 발생한다")
         void throwsConflict_whenPaymentIsAlreadyApproved() {

@@ -74,14 +74,28 @@ public class Payment extends BaseEntity {
     }
 
     /**
-     * 승인 확정. POINT 결제는 PG를 거치지 않으므로 transactionKey가 null이다 (참고: Payment-003).
+     * 승인 확정. <b>PG 거래 식별자의 유무가 곧 결제 수단의 불변식이다</b> — CARD는 있어야 하고
+     * POINT는 없어야 한다 (참고: B.1 불변식표).
      */
     public void approve(@Nullable String transactionKey) {
         status.requireTransitionTo(PaymentStatus.APPROVED);
+        requireTransactionKeyMatchesMethod(transactionKey);
 
         this.status = PaymentStatus.APPROVED;
         this.transactionKey = transactionKey;
         this.approvedAt = ZonedDateTime.now();
+    }
+
+    private void requireTransactionKeyMatchesMethod(@Nullable String transactionKey) {
+        boolean present = transactionKey != null && !transactionKey.isBlank();
+
+        if (method == PaymentMethod.CARD && !present) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "카드 결제 승인에는 PG 거래 식별자가 필요합니다.");
+        }
+        if (method != PaymentMethod.CARD && present) {
+            throw new CoreException(ErrorType.BAD_REQUEST,
+                    "%s 결제에는 PG 거래 식별자가 없어야 합니다.".formatted(method.getLabel()));
+        }
     }
 
     /**

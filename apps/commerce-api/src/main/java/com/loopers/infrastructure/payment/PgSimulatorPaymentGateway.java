@@ -18,6 +18,9 @@ import java.net.UnknownHostException;
 /**
  * 이 어댑터의 책임은 <b>PG 응답을 세 예외 타입 중 하나로 번역하는 것</b>이다.
  * 재시도할지 결제를 종결할지는 여기서 판단하지 않는다 (참고: Payment-010).
+ * <p>
+ * <b>거래가 안 생겼음이 확실하지 않으면 {@link PgResultUnknownException}이다.</b> 거절은 PG가 4xx로
+ * 직접 말해 준 경우뿐이다 (참고: 07_payment.md D절).
  */
 @Slf4j
 public class PgSimulatorPaymentGateway implements PaymentGateway {
@@ -61,12 +64,18 @@ public class PgSimulatorPaymentGateway implements PaymentGateway {
      * (참고: Payment-009).
      */
     private RuntimeException translate(HttpStatusCode status, String orderNumber) {
-        log.warn("PG 승인 요청이 거절되었습니다. orderNumber={} status={}", orderNumber, status);
-
         if (status.value() == 429 || status.value() == 503) {
+            log.warn("PG가 요청을 받지 않았습니다. orderNumber={} status={}", orderNumber, status);
             return new PgNotProcessedException("PG가 요청을 받지 못했습니다. 잠시 후 다시 시도해주세요.");
         }
 
+        // 5xx는 PG가 거래를 기록하기 전에 실패했는지 후에 실패했는지 알 수 없다. 502·504는 앞단 프록시가 냈을 수도 있다
+        if (status.is5xxServerError()) {
+            log.error("PG가 처리 여부를 알 수 없는 응답을 주었습니다. orderNumber={} status={}", orderNumber, status);
+            return new PgResultUnknownException("PG가 처리 여부를 알 수 없는 응답을 주었습니다.");
+        }
+
+        log.warn("PG 승인 요청이 거절되었습니다. orderNumber={} status={}", orderNumber, status);
         return new PgRejectedException("PG 승인 요청이 거절되었습니다.");
     }
 
@@ -85,9 +94,9 @@ public class PgSimulatorPaymentGateway implements PaymentGateway {
             }
         }
 
-        // 응답은 받았으나 해석하지 못한 경우. PG는 요청을 처리했으므로 거절과 같이 다룬다 (참고: Payment-009)
+        // 응답을 받았으나 해석하지 못했거나 본문을 읽다 끊긴 경우. PG가 거래를 만들었을 수 있다 (참고: 07_payment.md D절)
         log.error("PG 응답을 해석하지 못했습니다. orderNumber={}", orderNumber, e);
-        return new PgRejectedException("PG 응답을 해석할 수 없습니다.");
+        return new PgResultUnknownException("PG 응답을 해석할 수 없습니다.", e);
     }
 
     /**
@@ -108,8 +117,9 @@ public class PgSimulatorPaymentGateway implements PaymentGateway {
 
     private PaymentGatewayDto.Approval toApproval(PgApiResponse<PgApprovalResponse> response, String orderNumber) {
         if (response == null || response.data() == null || response.data().transactionKey() == null) {
+            // 2xx는 PG가 거래를 만들었다는 뜻이다. 본문을 못 읽었다고 거절로 볼 수 없다
             log.error("PG 응답을 해석할 수 없습니다. orderNumber={} response={}", orderNumber, response);
-            throw new PgRejectedException("PG 응답을 해석할 수 없습니다.");
+            throw new PgResultUnknownException("PG 응답을 해석할 수 없습니다.");
         }
 
         PgApprovalResponse data = response.data();

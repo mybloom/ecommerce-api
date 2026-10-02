@@ -432,11 +432,11 @@ class PaymentUseCaseTest {
 
         /**
          * PG가 처리했는지 모르는 상태에서 실패로 확정하면, PG가 승인한 결제를 되돌릴 수 없게 만든다.
-         * <b>PgResultUnknownException이 CoreException이 아니라는 사실이 이 동작을 강제한다</b>
-         * (참고: Payment-010).
+         * 결제 접수 자체는 됐으므로 <b>오류가 아니라 PENDING으로 응답한다</b> — 정상 접수와 같은 형태이며
+         * 최종 결과는 콜백이 정한다 (참고: Payment-010, 07_payment.md D절).
          */
         @Test
-        @DisplayName("PG 응답을 받지 못하면 보상이 걸리지 않아 결제는 PENDING, 주문은 결제대기, 재고는 묶인 채로 남는다")
+        @DisplayName("PG 처리 여부를 알 수 없으면 PENDING으로 응답하고, 보상이 걸리지 않아 결제는 PENDING, 주문은 결제대기, 재고는 묶인 채로 남는다")
         void keepsPending_whenPgResultIsUnknown() {
             // given
             when(paymentGateway.requestApproval(any()))
@@ -445,7 +445,7 @@ class PaymentUseCaseTest {
             String orderNumber = anAwaitingPaymentOrderNumber();
 
             // when
-            Throwable thrown = catchThrowable(() -> paymentUseCase.pay(aCardPayInfo(orderNumber)));
+            PaymentUseCaseDto.PayResult result = paymentUseCase.pay(aCardPayInfo(orderNumber));
 
             // then
             Payment pendingPayment = findPaymentOf(orderNumber);
@@ -453,7 +453,7 @@ class PaymentUseCaseTest {
             int heldStock = findStockOf(product);
 
             assertAll(
-                    () -> assertThat(thrown).isNotInstanceOf(CoreException.class),
+                    () -> assertThat(result.status()).isEqualTo(PaymentUseCaseDto.PaymentStatus.PENDING),
                     () -> assertThat(pendingPayment.getStatus()).isEqualTo(PaymentStatus.PENDING),
                     () -> assertThat(pendingPayment.getFailureReason()).isNull(),
                     () -> assertThat(awaitingOrder.getStatus()).isEqualTo(OrderStatus.AWAITING_PAYMENT),

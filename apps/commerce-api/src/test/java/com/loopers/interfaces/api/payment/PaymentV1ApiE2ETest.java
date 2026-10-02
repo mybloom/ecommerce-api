@@ -18,6 +18,7 @@ import com.loopers.domain.payment.PaymentGatewayDto;
 import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PaymentStatus;
 import com.loopers.domain.payment.PgRejectedException;
+import com.loopers.domain.payment.PgResultUnknownException;
 import com.loopers.domain.payment.PgTransactionStatus;
 import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointRepository;
@@ -341,7 +342,7 @@ class PaymentV1ApiE2ETest {
         }
 
         @Test
-        @DisplayName("PG가 승인 요청을 거절하면 502를 반환하고, 주문은 결제실패가 되며 확보했던 재고가 복원된다")
+        @DisplayName("PG가 승인 요청을 명시적으로 거절하면 502를 반환하고, 주문은 결제실패가 되며 확보했던 재고가 복원된다")
         void returnsBadGateway_whenPgRejects() {
             // given
             when(paymentGateway.requestApproval(any()))
@@ -361,6 +362,31 @@ class PaymentV1ApiE2ETest {
                     () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY),
                     () -> assertThat(failedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED),
                     () -> assertThat(restoredStock).isEqualTo(initialStock)
+            );
+        }
+
+        @Test
+        @DisplayName("PG 처리 여부를 알 수 없으면 200과 PENDING을 반환하고, 주문은 결제대기로 남으며 재고는 묶인 채로 남는다")
+        void returnsPending_whenPgResultIsUnknown() {
+            // given
+            when(paymentGateway.requestApproval(any()))
+                    .thenThrow(new PgResultUnknownException("PG가 처리 여부를 알 수 없는 응답을 주었습니다."));
+            int initialStock = ProductFixture.DEFAULT_STOCK.getValue();
+            String orderNumber = anAwaitingPaymentOrderNumber(member.getId());
+
+            // when
+            ResponseEntity<ApiResponse<PaymentV1Dto.PayResponse>> response =
+                    requestCardPayment(member.getId(), orderNumber);
+
+            // then
+            Order awaitingOrder = findOrder(orderNumber);
+            int heldStock = findStockOf(product);
+
+            assertAll(
+                    () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
+                    () -> assertThat(response.getBody().data().status()).isEqualTo(PaymentUseCaseDto.PaymentStatus.PENDING),
+                    () -> assertThat(awaitingOrder.getStatus()).isEqualTo(OrderStatus.AWAITING_PAYMENT),
+                    () -> assertThat(heldStock).isEqualTo(initialStock - ORDER_QUANTITY)
             );
         }
 

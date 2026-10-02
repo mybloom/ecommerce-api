@@ -7,9 +7,12 @@ import com.loopers.domain.payment.PgRejectedException;
 import com.loopers.domain.payment.PgResultUnknownException;
 import com.loopers.domain.payment.PgTransactionStatus;
 import com.loopers.domain.shared.Money;
+import com.loopers.support.error.CoreException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -21,6 +24,7 @@ import java.net.Socket;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
@@ -32,6 +36,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 /**
  * 이 어댑터의 책임은 <b>PG 응답을 세 예외 타입 중 하나로 번역하는 것</b>이다 (참고: Payment-010).
  * 번역이 틀리면 재시도해도 되는 것을 포기하거나, 확정하면 안 되는 것을 확정한다.
+ * <b>거래가 안 생겼음이 확실하지 않으면 PgResultUnknownException이다</b> (참고: 07_payment.md D절).
  */
 class PgSimulatorPaymentGatewayTest {
 
@@ -105,20 +110,61 @@ class PgSimulatorPaymentGatewayTest {
         }
 
         /**
-         * 시뮬레이터가 40% 확률로 내는 거절이다. 흔한 경로라 번역이 틀리면 바로 드러난다.
+         * 5xx는 PG가 거래를 기록하기 전에 실패했는지 후에 실패했는지 우리가 볼 수 없다.
+         * 502·504는 PG 앞의 프록시가 대신 낸 것일 수도 있다. <b>거래가 있을 수 있으므로</b>
+         * 결제를 확정해서는 안 된다 (참고: 07_payment.md D절).
          */
-        @Test
-        @DisplayName("PG가 500으로 거절하면 PgRejectedException이 발생한다")
-        void throwsRejected_whenPgRespondsServerError() {
+        @ParameterizedTest
+        @EnumSource(value = HttpStatus.class, names = {"INTERNAL_SERVER_ERROR", "BAD_GATEWAY", "GATEWAY_TIMEOUT"})
+        @DisplayName("PG가 status 로 응답하면 처리 여부를 알 수 없으므로 PgResultUnknownException이 발생하고, CoreException이 아니다")
+        void throwsResultUnknown_whenPgRespondsServerError(HttpStatus status) {
             // given
             Fixture fixture = aGatewayBackedByMockServer();
 
             fixture.server().expect(requestTo(BASE_URL + "/api/v1/payments"))
-                    .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+                    .andRespond(withStatus(status));
+
+            // when
+            Throwable thrown = catchThrowable(() -> fixture.gateway().requestApproval(aCommand()));
+
+            // then
+            assertAll(
+                    () -> assertThat(thrown).isInstanceOf(PgResultUnknownException.class),
+                    () -> assertThat(thrown).isNotInstanceOf(CoreException.class)
+            );
+        }
+
+        /**
+         * 2xx는 PG가 요청을 받아 거래를 만들었다는 뜻이다. 우리가 본문을 읽지 못했다고 거절로 볼 수 없다.
+         */
+        @Test
+        @DisplayName("2xx 응답에 거래 식별자가 없으면 처리 여부를 알 수 없으므로 PgResultUnknownException이 발생한다")
+        void throwsResultUnknown_whenSuccessBodyHasNoTransactionKey() {
+            // given
+            Fixture fixture = aGatewayBackedByMockServer();
+
+            fixture.server().expect(requestTo(BASE_URL + "/api/v1/payments"))
+                    .andRespond(withSuccess("""
+                            {"meta":{"result":"SUCCESS"},"data":null}
+                            """, MediaType.APPLICATION_JSON));
 
             // when & then
             assertThatThrownBy(() -> fixture.gateway().requestApproval(aCommand()))
-                    .isInstanceOf(PgRejectedException.class);
+                    .isInstanceOf(PgResultUnknownException.class);
+        }
+
+        @Test
+        @DisplayName("2xx 응답의 본문을 해석할 수 없으면 처리 여부를 알 수 없으므로 PgResultUnknownException이 발생한다")
+        void throwsResultUnknown_whenSuccessBodyIsUnreadable() {
+            // given
+            Fixture fixture = aGatewayBackedByMockServer();
+
+            fixture.server().expect(requestTo(BASE_URL + "/api/v1/payments"))
+                    .andRespond(withSuccess("<html>maintenance</html>", MediaType.APPLICATION_JSON));
+
+            // when & then
+            assertThatThrownBy(() -> fixture.gateway().requestApproval(aCommand()))
+                    .isInstanceOf(PgResultUnknownException.class);
         }
 
         @Test

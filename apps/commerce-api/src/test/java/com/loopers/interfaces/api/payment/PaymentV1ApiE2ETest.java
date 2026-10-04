@@ -17,6 +17,7 @@ import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PaymentGatewayDto;
 import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PaymentStatus;
+import com.loopers.domain.payment.PgCircuitOpenException;
 import com.loopers.domain.payment.PgConnectionFailedException;
 import com.loopers.domain.payment.PgHostUnresolvedException;
 import com.loopers.domain.payment.PgNotProcessedException;
@@ -80,7 +81,8 @@ class PaymentV1ApiE2ETest {
                 Arguments.of(new PgConnectionFailedException("PG에 연결하지 못했습니다."), "PG_CONNECTION_FAILED"),
                 Arguments.of(new PgHostUnresolvedException("PG 주소를 찾지 못했습니다."), "PG_CONNECTION_FAILED"),
                 Arguments.of(new PgRateLimitedException("PG가 요청 한도를 넘었다고 알렸습니다.", Duration.ofSeconds(1)), "PG_RATE_LIMITED"),
-                Arguments.of(new PgUnavailableException("PG가 지금은 요청을 받을 수 없다고 알렸습니다.", null), "PG_UNAVAILABLE")
+                Arguments.of(new PgUnavailableException("PG가 지금은 요청을 받을 수 없다고 알렸습니다.", null), "PG_UNAVAILABLE"),
+                Arguments.of(new PgCircuitOpenException("PG 서킷이 열려 요청을 보내지 않았습니다."), "PG_CIRCUIT_OPEN")
         );
     }
 

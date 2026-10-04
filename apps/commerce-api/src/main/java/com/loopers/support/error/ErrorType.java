@@ -22,7 +22,9 @@ public enum ErrorType {
      */
     PG_CONNECTION_FAILED(HttpStatus.BAD_GATEWAY, "PG_CONNECTION_FAILED", "결제 서버에 연결하지 못했습니다. 잠시 후 다시 주문해 주세요."),
     PG_RATE_LIMITED(HttpStatus.BAD_GATEWAY, "PG_RATE_LIMITED", "결제 요청이 몰리고 있습니다. 잠시 후 다시 주문해 주세요."),
-    PG_UNAVAILABLE(HttpStatus.BAD_GATEWAY, "PG_UNAVAILABLE", "결제 서버가 일시적으로 응답하지 않습니다. 잠시 후 다시 주문해 주세요.");
+    PG_UNAVAILABLE(HttpStatus.BAD_GATEWAY, "PG_UNAVAILABLE", "결제 서버가 일시적으로 응답하지 않습니다. 잠시 후 다시 주문해 주세요."),
+    /** PG가 준 503(PG_UNAVAILABLE)과 달리 우리 서킷이 막았다. 응답만 보고도 둘을 구분한다 (참고: 07_payment.md F.2) */
+    PG_CIRCUIT_OPEN(HttpStatus.BAD_GATEWAY, "PG_CIRCUIT_OPEN", "결제 서버가 불안정해 결제를 잠시 멈췄습니다. 잠시 후 다시 주문해 주세요.");
 
     private final HttpStatus status;
     private final String code;

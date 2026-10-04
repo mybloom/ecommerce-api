@@ -313,6 +313,58 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
 
 ---
 
+### B.5. PG 실패 예외
+
+PG 승인 요청이 실패하면 어댑터(`PgSimulatorPaymentGateway`)가 아래 타입 중 하나로 번역한다. 모두 `domain/payment`에 있다. 나눈 이유는 Payment-010(세 타입)과 E.4 정한 것 3·5번(하위 타입, 에러 코드) 참고.
+
+**계층**
+
+```
+CoreException
+ ├ PgNotProcessedException (abstract sealed)   처리되지 않았음이 확실
+ │  ├ PgConnectionFailedException (final)     연결 거부 · connect timeout
+ │  ├ PgHostUnresolvedException   (final)     DNS 실패
+ │  ├ PgRateLimitedException      (final)     429 (+ Retry-After)
+ │  └ PgUnavailableException      (final)     503 (+ Retry-After)
+ └ PgRejectedException                         PG가 4xx로 거절 (429 제외)
+RuntimeException
+ └ PgResultUnknownException                    처리했는지 모름
+```
+
+| 상위 예외 | 예외 | 뜻 | 거래 | 보상 |
+|---|---|---|---|---|
+| `CoreException` | `PgNotProcessedException` | 요청이 닿지 않았거나 PG가 받지 않았다 | 확실히 없음 | 재시도 후에도 실패하면 돈다 |
+| `CoreException` | `PgRejectedException` | PG가 거절했다 | 없음 | 돈다 |
+| `RuntimeException` | `PgResultUnknownException` | PG가 처리했는지 모른다 | 있을 수 있음 | 돌지 않는다. `CoreException`이 아니라 `catch (CoreException)`에 걸리지 않는다 |
+
+**상위 예외를 나눈 이유** — 보상이 `catch (CoreException)`에만 걸려 있어, 상위 예외가 곧 "결제를 실패로 확정해도 되는가"를 정한다
+
+- **`CoreException`:** 거래가 없음이 확실해 실패로 확정해도 안전하다. 보상이 자동으로 돌고, `ErrorType`으로 502와 에러 코드가 정해진다
+- **`RuntimeException`:** PG가 승인했을 수 있어 실패로 확정하면 안 된다. 확정하면 뒤늦은 승인 콜백이 무시되어 돈은 나갔는데 주문은 실패로 남는다. `CoreException`이 아니므로 보상이 실수로라도 돌 수 없다
+
+**타입별 처리**
+
+| 예외 | 언제 | 재시도 | 결제 | 응답 (에러 코드) |
+|---|---|---|---|---|
+| `PgConnectionFailedException` | 연결 거부, `connect timeout` | 1회, 0~200ms 무작위 대기 | `FAILED`, 재고 복원 | 502 `PG_CONNECTION_FAILED` |
+| `PgHostUnresolvedException` | DNS 실패 | 안 함 (대개 설정 오류) | `FAILED`, 재고 복원 | 502 `PG_CONNECTION_FAILED` |
+| `PgRateLimitedException` | `429` | 1회, `Retry-After` 또는 500~700ms | `FAILED`, 재고 복원 | 502 `PG_RATE_LIMITED` |
+| `PgUnavailableException` | `503` | 1회, `Retry-After` 또는 300~500ms | `FAILED`, 재고 복원 | 502 `PG_UNAVAILABLE` |
+| `PgRejectedException` | PG 4xx (`429` 제외) | 안 함 (같은 요청은 같은 답) | `FAILED`, 재고 복원 | 502 `Bad Gateway` |
+| `PgResultUnknownException` | `read timeout`, 5xx(`503` 제외), 응답 해석 실패 | 안 함 (이중 승인 위험) | `PENDING` 유지 | 200 + `PENDING` |
+
+- `Retry-After`가 1초(`retry-after-cap-millis`)를 넘으면 재시도하지 않고 바로 실패한다
+- 재시도 숫자는 `pg.retry.*`, 판단은 `RetryingPaymentGateway`에 있다 (참고: E.4 정한 것 6번)
+
+**구조로 강제되는 것**
+
+- **부모 `PgNotProcessedException`은 직접 만들 수 없다** (abstract sealed). 처리되지 않은 실패는 반드시 하위 4개 중 하나로 원인이 정해진다. 하위가 `final`이라 다섯 번째 원인이 몰래 생기지 않는다
+- **결제 흐름은 부모 타입만 본다.** 보상은 `catch (CoreException)`으로 `PgNotProcessedException`·`PgRejectedException`을 함께 받는다. 원인을 구분하는 곳은 재시도 데코레이터와 에러 코드뿐이다
+- **`PgResultUnknownException`은 `CoreException`이 아니다.** 그래서 보상에 걸리지 않고 결제가 `PENDING`으로 남는다 (참고: Payment-010)
+- **`Retry-After`는 `429`·`503` 예외에만 있다.** 초(`2`)와 날짜(`Sun, 04 Oct 2026 05:00:03 GMT`) 두 형식을 어댑터가 해석한다. 지난 날짜는 0, 해석하지 못하면 없음으로 둔다
+
+---
+
 ## C. 설계 결정
 
 > 확정된 결정과 보류된 결정을 함께 모은다. 보류된 항목이 결정되면 C.2 → C.1로 이동한다.
@@ -474,7 +526,7 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
 
     | 예외 | 사실 | 언제 | 상속 |
     |---|---|---|---|
-    | `PgNotProcessedException` | **처리되지 않았음이 확실** | 연결 불가, `connect timeout`, DNS 실패, `429`·`503` | `CoreException(BAD_GATEWAY)` |
+    | `PgNotProcessedException` | **처리되지 않았음이 확실** | 연결 불가, `connect timeout`, DNS 실패, `429`·`503` | `CoreException` (abstract sealed. 하위 4개가 각자 `ErrorType`을 가진다 — B.5) |
     | `PgRejectedException` | **처리했고 거절했다** | PG의 4xx 응답 (`429` 제외) | `CoreException(BAD_GATEWAY)` |
     | `PgResultUnknownException` | **처리했는지 모른다** | `read timeout`, 5xx(`503` 제외), 응답 해석 실패 | **`CoreException`이 아니다** |
 
@@ -526,7 +578,7 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
 
     **남은 문제 셋** — ① 응답의 `transactions`가 배열이라 한 `orderId`에 거래가 여럿일 수 있는데 우리는 결제가 하나다(`orderId` UNIQUE). 어느 거래를 정답으로 볼지 규칙이 필요하다. ② `X-USER-ID`에 실을 값은 `Payment.memberId`다. ③ 배치를 `apps/commerce-batch`에 둘지 `commerce-api`의 스케줄러로 둘지 미정.
 
-- [ ] **재시도 — 검토는 E절에 정리했고, 구현은 보류한다** — 대상, 지금 구조에서 걸리는 점, 횟수와 시간은 E절에 있다. 결정이 나면 C.1에 올린다 (관련: UC-1, Payment-005, Payment-006, Payment-008, Payment-010)
+- [x] **PG 요청 재시도** — E.4 "정한 것"대로 구현했다 (2026-10-04). 예외 구성은 B.5 참고. 서킷 브레이커와 보상(T2) 재시도는 따로 한다 (관련: UC-1, Payment-005, Payment-006, Payment-008, Payment-010)
 - [ ] **포인트 + 카드 복합 결제, 부분 결제** — `Payment.amount`가 주문 총액과 같다는 불변식과 `orderId` UNIQUE를 함께 풀어야 한다 (관련: Payment-001, Payment-002)
 - [ ] **`transactionKey` 기준 정산 대사** — PG 거래 내역과 우리 결제 내역을 맞춰보는 배치 (관련: Payment-007)
 - [ ] **보상(T2)이 실패했을 때의 복구 수단** — 원래 예외가 덮이던 것은 해결했다. `markFailedPreservingCause`가 보상 실패를 `addSuppressed`로 매달아 원래 원인과 함께 올린다. **남은 것은 보상이 돌지 못하는 경우 자체다.**
@@ -547,11 +599,11 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
 | `domain/order/OrderStatus.java` | `AWAITING_PAYMENT → {PAID, PAYMENT_FAILED}` 전이 개방 완료 |
 | `domain/order/Order.java` | `paidAt`, `pay()`, `markPaymentFailed()` 추가 완료 |
 | `domain/product/Product.java` | `increaseStock(quantity)` 추가 완료 |
-| `domain/payment` | `Payment`(수단별 `transactionKey` 불변식 포함), `PaymentStatus`, `PaymentService`, `PaymentRepository` 완료. `PaymentMethod`에 `CARD`, `CardType`·`PgTransactionStatus` 추가. PG 포트 `PaymentGateway`와 실패 예외 3종(Payment-010) |
+| `domain/payment` | `Payment`(수단별 `transactionKey` 불변식 포함), `PaymentStatus`, `PaymentService`, `PaymentRepository` 완료. `PaymentMethod`에 `CARD`, `CardType`·`PgTransactionStatus` 추가. PG 포트 `PaymentGateway`와 실패 예외 3종(Payment-010), `PgNotProcessedException` 하위 4종(B.5) |
 | `application/payment` | `PaymentUseCase` + `PaymentProcessor`(T0/T2, 콜백 종결) 완료. 승인(T1)은 `PaymentStrategy` 구현이 가진다 — `PointPaymentStrategy`, `CardPaymentStrategy` |
 | `interfaces/api/payment` | 결제 요청(카드 정보 조건부 검증 포함)과 콜백 엔드포인트 완료 |
-| `infrastructure/payment` | `PgSimulatorPaymentGateway` 어댑터 완료. PG 응답을 세 예외 타입으로 번역한다 |
-| 미구현 | 대사 배치, PG 요청 재시도 (참고: C.2). `PaymentMethod.isSettledInRequest()`는 수단 분기를 전략이 가져가 만들지 않았다 |
+| `infrastructure/payment` | `PgSimulatorPaymentGateway` 어댑터 완료. PG 응답을 예외 타입으로 번역하고 `Retry-After`를 해석한다. `RetryingPaymentGateway`(재시도 데코레이터)를 `PgGatewayConfig`에서 감싸 빈으로 등록한다 |
+| 미구현 | 대사 배치, 서킷 브레이커 (참고: C.2, E.4 "남은 결정"). `PaymentMethod.isSettledInRequest()`는 수단 분기를 전략이 가져가 만들지 않았다 |
 
 > `OrderStatusTest.throwsConflict_whenSourceIsNotPending`은 전이를 열어도 **빨간불을 내지 않았다.** 목표 상태를 `AWAITING_PAYMENT`와 `ORDER_FAILED` 둘만 검사해 새로 열린 `PAID`·`PAYMENT_FAILED`와 겹치지 않았기 때문이다. 거짓이 된 것은 DisplayName의 "어디로도 전이할 수 없고"였다.
 > 지금은 출발을 실제 종결 상태로 좁히고 **목표는 `values()` 전부를 훑도록** 고쳤다. 같은 실수가 다시 조용히 지나가지 않는다.
@@ -887,10 +939,14 @@ PG: 거래가 살아 있어 1~5초 뒤 SUCCESS 콜백을 보냄
       retry:
         max-attempts: 2
         connection-failed-max-wait-millis: 200
-        unavailable-wait-millis: 300..500
-        rate-limited-default-wait-millis: 500
+        rate-limited-min-wait-millis: 500
+        rate-limited-max-wait-millis: 700
+        unavailable-min-wait-millis: 300
+        unavailable-max-wait-millis: 500
         retry-after-cap-millis: 1000
     ```
+
+    - 구현 (2026-10-04): 판단은 `RetryingPaymentGateway`에 두고 `PgGatewayConfig`는 조립만 한다. 대기 범위는 최소·최대 두 키로 나눴다
 
     - yml에는 숫자만 둔다. PG 설정이 이미 `PgProperties`(`pg.*`)로 묶여 있어 그 옆에 둔다
     - 코드에는 어떤 예외를 재시도하는지, 타입별 대기를 어떻게 계산하는지를 sealed 타입의 패턴 매칭 `switch`로 쓴다. 숫자는 `PgProperties`에서 받는다

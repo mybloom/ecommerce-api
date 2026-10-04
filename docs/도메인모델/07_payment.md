@@ -978,7 +978,7 @@ PG: 거래가 살아 있어 1~5초 뒤 SUCCESS 콜백을 보냄
     - 이번 재시도만으로도 범위가 크다 — 하위 예외 4개, `Retry-After` 해석, `ErrorType` 3개, 데코레이터, `pg.retry.*`, 각각의 테스트. 서킷까지 얹으면 실패했을 때 원인을 나누기 어렵다
     - 따로 정할 것이 많다
         - 임계치: 실패율 몇 %에서 열지, 최근 몇 건을 볼지, 열린 상태 유지 시간, 반쯤 열렸을 때 시험할 건수
-        - 무엇을 실패로 셀지: `503`·연결 실패는 세고 `429`는 뺀다. "모름"(5xx·`read timeout`)을 셀지는 아직 정하지 않았다
+        - 무엇을 실패로 셀지: `503`·연결 실패는 세고 `429`는 뺀다. "모름"(5xx·`read timeout`)도 세기로 했다 (F.1)
         - 열려서 거절된 요청의 응답: 요청이 나가지 않았으니 확실한 실패라 `FAILED` + 502가 된다. PG가 아픈 동안 들어온 주문이 전부 실패로 굳는다
         - 모니터링: actuator로 상태를 볼지 — 이때 resilience4j 스타터를 다시 본다 (6번)
     - 모의 PG에서는 값을 따로 맞춰야 한다. 40%의 500이 이제 "모름"이라, 이를 실패로 세면 평소 실패율이 40% 가까이 나와 흔한 임계치(50%) 근처에서 회로가 자주 열린다
@@ -987,3 +987,118 @@ PG: 거래가 살아 있어 1~5초 뒤 SUCCESS 콜백을 보냄
         - 데코레이터를 `PgGatewayConfig` 한곳에서 조립해, 나중에 Retry(바깥)·CircuitBreaker(안쪽)를 같은 자리에 추가할 수 있게 한다
         - 재시도 대상을 `PgNotProcessedException` 하위 타입으로만 한정해, 나중의 `CallNotPermittedException`(서킷이 열려 거절)이 자동으로 재시도에서 빠지게 한다
 - [x] 보상(T2) 재시도는 이번 PG 재시도 작업에 넣지 않고 따로 한다 (2026-10-03). 대상(락 타임아웃·데드락 같은 DB 예외만), 횟수, 락 대기 시간(MySQL 기본 50초)을 그때 정한다 (참고: E.1, C.2 "보상이 실패했을 때의 복구 수단")
+
+## F. PG 서킷 브레이커 검토
+
+> E.4 "남은 결정"에서 미룬 서킷 브레이커를 정한다. 재시도(E절)를 그대로 두고, 같은 자리(`PgGatewayConfig`)에서 안쪽에 감싼다.
+>
+> 판단 기준은 하나다 — **"PG가 아픈가."** PG의 건강을 보여 주는 실패만 세고, 우리 쪽 문제로 난 실패는 세지 않는다.
+
+**정한 것** (2026-10-04)
+1. "모름"(`PgResultUnknownException`)도 실패로 센다 (F.1)
+2. 열린 회로가 거절한 요청은 `PgNotProcessedException`의 다섯 번째 하위 타입 `PgCircuitOpenException`으로 번역하고, 에러 코드 `PG_CIRCUIT_OPEN`(502)을 새로 둔다 (F.2)
+3. 임계치는 최근 20건 중 실패율 50%, 열림 유지 10초로 시작한다. 숫자는 `pg.circuit-breaker.*`에 둔다 (F.3)
+4. 재시도처럼 resilience4j 코어로 직접 조립하고, 상태는 전이 로그로만 본다 (F.4)
+
+### F.1. 무엇을 실패로 세나
+
+| 예외 | 서킷 | 이유 |
+|---|---|---|
+| `PgConnectionFailedException` | 실패 | PG에 닿지 못했다. 가장 직접적인 장애 신호다 |
+| `PgHostUnresolvedException` | 실패 | 대개 설정 오류지만 PG에 닿지 못하는 것은 같다. 회로가 열려도 어차피 전부 실패하던 요청이라 잃는 것이 없다 |
+| `PgUnavailableException` | 실패 | PG가 스스로 과부하라고 알렸다 |
+| `PgResultUnknownException` | 실패 | 5xx·`read timeout`은 PG 장애에서 가장 흔한 모습이다. 빼면 PG가 500을 쏟아도 회로가 열리지 않는다 |
+| `PgRateLimitedException` | **세지 않음** (`ignoreExceptions`) | PG의 건강이 아니라 우리 요청량 문제다. 넣으면 회로가 잘못 열린다 (E.2 8번) |
+| `PgRejectedException` | **성공** | PG가 정상적으로 판단을 내렸다. 우리 요청의 문제라 PG의 건강과 무관하다 (Payment-010) |
+
+- 실패로 세는 예외는 `recordExceptions`로 클래스를 나열한다. 나열하지 않은 예외는 resilience4j가 성공으로 센다
+- `429`는 성공으로도 세면 안 된다. 한도에 걸린 동안 성공이 쌓이면 실패율이 실제보다 낮아진다. 그래서 `ignoreExceptions`로 아예 빼 계산에서 제외한다
+
+**"모름"을 세면 생기는 문제 — 모의 PG**
+- 모의 PG는 일부러 40%를 500으로 돌려준다. 이제 이것이 "모름"이라 평소 실패율이 40% 가까이 나온다
+- 실패율 50%와 가까워, 우연히 몰리면 PG가 멀쩡해도 회로가 열린다
+- 그래서 `local`·`test` 프로필에서만 실패율을 70%로 올린다 (F.3). 두 프로필이 yml 구간을 함께 쓴다. 운영 값은 실제 PG 기준으로 둔다
+
+### F.2. 열린 회로가 거절한 요청
+
+**지금 구조로 두면** — 열린 회로는 `CallNotPermittedException`을 던진다
+- `CoreException`이 아니라 보상(`catch (CoreException)`)이 돌지 않는다
+- `PgResultUnknownException`도 아니라 `CardPaymentStrategy`가 잡지 않는다
+- 결과: 결제는 `PENDING`으로 남고 응답은 500이다. 요청이 나가지 않아 콜백도 오지 않으므로 영구히 체류한다
+
+**정한 것: `PgCircuitOpenException`으로 번역한다**
+
+```
+PgNotProcessedException (abstract sealed)
+ ├ PgConnectionFailedException
+ ├ PgHostUnresolvedException
+ ├ PgRateLimitedException
+ ├ PgUnavailableException
+ └ PgCircuitOpenException        서킷이 열려 요청을 보내지 않음    재시도 안 함
+```
+
+| 하위 예외 | `ErrorType` | HTTP | 메시지 (예) |
+|---|---|---|---|
+| `PgCircuitOpenException` | `PG_CIRCUIT_OPEN` | 502 | 결제 서버가 불안정해 결제를 잠시 멈췄습니다. 잠시 후 다시 주문해 주세요. |
+
+- **`PgNotProcessedException` 아래에 두는 이유:** 요청이 나가지 않아 거래가 없음이 확실하다. 결제 `FAILED`, 재고 복원, 주문 `PAYMENT_FAILED`, 502로 다른 "처리 안 됨"과 똑같이 끝난다
+- **재시도하지 않는다:** 열린 회로는 몇백 ms 안에 닫히지 않는다(F.3 열림 유지 10초). 재시도 판단은 sealed 타입의 `switch`라, 하위 타입을 추가하면 `RetryingPaymentGateway`에서 컴파일 에러가 나 이 결정을 빠뜨릴 수 없다
+- **에러 코드를 새로 두는 이유:** 사용자 안내는 `PG_UNAVAILABLE`과 비슷하지만, 응답만 보고도 PG가 `503`을 준 것인지 우리가 막은 것인지 구분된다
+- **번역 위치:** 서킷 데코레이터(F.4)가 `CallNotPermittedException`을 잡아 바꾼다. resilience4j 타입이 infrastructure 밖으로 나가지 않는다
+- **대가:** PG가 아픈 동안 들어온 주문은 전부 실패로 굳는다. 재결제 경로가 없어 사용자는 주문부터 새로 만들어야 한다 (E.2 5번, C.2 "재결제"). 열려 있지 않았다면 어차피 연결 실패·`503`으로 같은 결과였으므로, 달라지는 것은 실패가 빨라진다는 점이다
+
+### F.3. 임계치
+
+```yaml
+pg:
+  circuit-breaker:
+    sliding-window-size: 20
+    minimum-number-of-calls: 10
+    failure-rate-threshold: 50
+    wait-duration-in-open-state-millis: 10000
+    permitted-number-of-calls-in-half-open-state: 3
+```
+
+`local`·`test` 프로필에서만 `failure-rate-threshold: 70` (F.1 "모의 PG")
+
+| 설정 | 값 | 이유 |
+|---|---|---|
+| 창 | 최근 **20건** (호출 수 기준) | 시간 기준은 트래픽이 적을 때 최소 건수를 채우지 못해 회로가 잘 열리지 않는다 |
+| 최소 건수 | **10건** | 처음 몇 건의 우연한 실패로 열리지 않게 한다 |
+| 실패율 | **50%** | 절반이 실패하면 사용자 대부분이 이미 실패를 겪고 있다 |
+| 열림 유지 | **10초** | PG 재시작·배포가 대개 이 안에 끝난다. 길게 잡으면 PG가 살아난 뒤에도 주문이 실패로 굳는다 (F.2 대가) |
+| 반열림 시험 | **3건** | 셋 중 둘 이상 성공해야(실패율 50% 미만) 닫힌다. 한 건만 보면 우연에 흔들린다 |
+
+- 재시도의 시도 하나하나가 서킷에 따로 기록된다. 연결 실패 한 건이 재시도까지 실패하면 실패 2건이다
+- 느린 호출(`slowCallDurationThreshold`)은 걸지 않는다. `read timeout`(3초)이 이미 "모름"으로 실패에 들어간다
+
+### F.4. 구성
+
+```
+PaymentGateway 빈
+ └ RetryingPaymentGateway           바깥: 재시도
+    └ CircuitBreakingPaymentGateway 안쪽: 서킷, CallNotPermittedException → PgCircuitOpenException
+       └ PgSimulatorPaymentGateway  어댑터: 응답을 예외 타입으로 번역
+```
+
+- **순서:** 바깥에 Retry, 안쪽에 CircuitBreaker (E.4). 재시도 대기 중에 회로가 열리면 두 번째 시도는 `PgCircuitOpenException`을 받고 거기서 멈춘다
+
+> **서킷을 안쪽에 두는 이유 (참고)**
+>
+> | 비교 | 서킷 안쪽 (택함) | 서킷 바깥 |
+> |---|---|---|
+> | 무엇을 세나 | PG에 실제로 나간 시도 하나하나 | 재시도까지 끝난 요청의 최종 결과 |
+> | 첫 시도 실패, 재시도 성공 | 실패 1건 + 성공 1건 | 성공 1건. PG의 실패가 가려진다 |
+> | 회로가 열린 뒤 재시도 | 두 번째 시도가 PG에 나가지 않는다 | 이미 들어온 요청은 재시도까지 PG에 보낸다 |
+>
+> - **실패율이 PG의 상태를 그대로 보여 준다.** 서킷이 보는 것은 PG가 받은 요청 수와 같아야 한다. 바깥에 두면 재시도가 실패를 흡수해, PG가 절반을 실패해도 최종 결과는 대부분 성공으로 보인다
+> - **PG가 아플 때 부하를 덜 준다.** 열린 회로가 시도마다 앞을 막아, 장애 중에 재시도가 PG를 두 번씩 부르지 않는다
+> - **열린 회로의 거절이 재시도에 걸리지 않는다.** `PgCircuitOpenException`은 재시도 대상이 아니라 첫 거절에서 바로 끝난다 (F.2)
+> - **대가:** 실패가 요청보다 빨리 쌓여 회로가 빨리 열린다. 연결 실패 요청 5건이면 시도 10건이라 최소 건수(10건)를 채운다. 임계치는 이 계산을 전제로 정했다 (F.3)
+- **조립:** `PgGatewayConfig` 한곳에서 감싼다. 재시도와 같은 방식이다
+- **의존성:** `resilience4j-circuitbreaker` 코어만 추가한다. 스타터·레지스트리는 쓰지 않는다 (E.4 정한 것 6번)
+- **모니터링:** 상태가 바뀔 때(`CLOSED → OPEN` 등) 로그만 남긴다. 메트릭이 필요해지면 `resilience4j-micrometer`로 이 인스턴스를 붙인다
+
+**구현에 걸리는 점**
+- **서킷은 빈 하나에 상태가 쌓인다.** 스프링 컨텍스트를 공유하는 테스트에서 PG 실패를 반복하면 회로가 열려 뒤 테스트가 `PgCircuitOpenException`을 받을 수 있다. 서킷 판단은 데코레이터 단위 테스트에서 검증하고, 통합 테스트의 실패 횟수가 최소 건수(10건)에 닿는지 확인한다
+- **열림 유지 시간을 테스트에서 기다리지 않는다.** 반열림 전이는 짧은 값을 직접 넣거나 상태를 직접 바꿔 검증한다

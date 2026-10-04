@@ -38,6 +38,13 @@ pg:
     unavailable-min-wait-millis: 300
     unavailable-max-wait-millis: 500
     retry-after-cap-millis: 1000
+  # 서킷 숫자만 여기 둔다. 무엇을 실패로 셀지는 CircuitBreakingPaymentGateway 에 있다 (07_payment.md F.1·F.3)
+  circuit-breaker:
+    sliding-window-size: 20
+    minimum-number-of-calls: 10
+    failure-rate-threshold: 50
+    wait-duration-in-open-state-millis: 10000
+    permitted-number-of-calls-in-half-open-state: 3
 
 springdoc:
   use-fqn: true
@@ -49,6 +56,11 @@ spring:
   config:
     activate:
       on-profile: local, test
+
+# 모의 PG는 일부러 40%를 500(모름)으로 돌려줘 평소 실패율이 50%에 가깝다. 멀쩡할 때 열리지 않게 올린다 (07_payment.md F.1)
+pg:
+  circuit-breaker:
+    failure-rate-threshold: 70
 
 logging:
   level:

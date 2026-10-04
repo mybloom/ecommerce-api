@@ -36,6 +36,12 @@ class PgGatewayConfigTest {
     private static final long UNAVAILABLE_MAX_WAIT_MILLIS = 500;
     private static final long RETRY_AFTER_CAP_MILLIS = 1_000;
 
+    private static final int SLIDING_WINDOW_SIZE = 20;
+    private static final int MINIMUM_NUMBER_OF_CALLS = 10;
+    private static final float FAILURE_RATE_THRESHOLD = 50;
+    private static final long WAIT_DURATION_IN_OPEN_STATE_MILLIS = 10_000;
+    private static final int PERMITTED_NUMBER_OF_CALLS_IN_HALF_OPEN_STATE = 3;
+
     private static final PgProperties PROPERTIES = new PgProperties(
             BASE_URL,
             CALLBACK_URL,
@@ -48,7 +54,13 @@ class PgGatewayConfigTest {
                     RATE_LIMITED_MAX_WAIT_MILLIS,
                     UNAVAILABLE_MIN_WAIT_MILLIS,
                     UNAVAILABLE_MAX_WAIT_MILLIS,
-                    RETRY_AFTER_CAP_MILLIS));
+                    RETRY_AFTER_CAP_MILLIS),
+            new PgProperties.CircuitBreakerPolicy(
+                    SLIDING_WINDOW_SIZE,
+                    MINIMUM_NUMBER_OF_CALLS,
+                    FAILURE_RATE_THRESHOLD,
+                    WAIT_DURATION_IN_OPEN_STATE_MILLIS,
+                    PERMITTED_NUMBER_OF_CALLS_IN_HALF_OPEN_STATE));
 
     @Test
     @DisplayName("PaymentGateway 빈은 PG 어댑터를 재시도 데코레이터로 감싼 것이다")
@@ -87,7 +99,8 @@ class PgGatewayConfigTest {
                     CALLBACK_URL,
                     longConnectTimeoutMillis,
                     shortReadTimeoutMillis,
-                    PROPERTIES.retry());
+                    PROPERTIES.retry(),
+                    PROPERTIES.circuitBreaker());
             PaymentGateway gateway = new PgGatewayConfig().paymentGateway(properties);
             PaymentGatewayDto.ApprovalCommand command = new PaymentGatewayDto.ApprovalCommand(
                     135135L, "20260828-A3F9K2QP", CardType.SAMSUNG, "1234-5678-9814-1451", Money.of(5_000L));

@@ -12,7 +12,7 @@ import java.time.Duration;
  * {@code Retry-After}는 없을 수 있다. 있으면 재시도가 그 시간을 따른다 (참고: 07_payment.md E.4).
  */
 @Getter
-public class PgUnavailableException extends PgNotProcessedException {
+public final class PgUnavailableException extends PgNotProcessedException {
 
     @Nullable
     private final Duration retryAfter;

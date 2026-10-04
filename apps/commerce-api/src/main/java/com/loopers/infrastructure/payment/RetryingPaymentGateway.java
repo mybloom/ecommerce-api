@@ -3,6 +3,8 @@ package com.loopers.infrastructure.payment;
 import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PaymentGatewayDto;
 import com.loopers.domain.payment.PgConnectionFailedException;
+import com.loopers.domain.payment.PgHostUnresolvedException;
+import com.loopers.domain.payment.PgNotProcessedException;
 import com.loopers.domain.payment.PgRateLimitedException;
 import com.loopers.domain.payment.PgUnavailableException;
 import io.github.resilience4j.retry.Retry;
@@ -54,18 +56,19 @@ public class RetryingPaymentGateway implements PaymentGateway {
 
     /**
      * DNS 실패는 대개 설정 오류라 빠진다. Retry-After가 상한을 넘으면 사용자를 그만큼 붙잡지 않고 포기한다.
+     * <p>
+     * 처리되지 않은 실패는 sealed 타입이라 {@code switch}에 default가 없다. 원인이 늘면 여기서 컴파일 에러가 난다.
      */
     private boolean isRetryable(Throwable failure) {
-        if (failure instanceof PgConnectionFailedException) {
-            return true;
+        if (!(failure instanceof PgNotProcessedException notProcessed)) {
+            return false;
         }
-        if (failure instanceof PgRateLimitedException rateLimited) {
-            return isWithinCap(rateLimited.getRetryAfter());
-        }
-        if (failure instanceof PgUnavailableException unavailable) {
-            return isWithinCap(unavailable.getRetryAfter());
-        }
-        return false;
+        return switch (notProcessed) {
+            case PgConnectionFailedException ignored -> true;
+            case PgHostUnresolvedException ignored -> false;
+            case PgRateLimitedException rateLimited -> isWithinCap(rateLimited.getRetryAfter());
+            case PgUnavailableException unavailable -> isWithinCap(unavailable.getRetryAfter());
+        };
     }
 
     private boolean isWithinCap(@Nullable Duration retryAfter) {
@@ -77,18 +80,17 @@ public class RetryingPaymentGateway implements PaymentGateway {
      * 요청들이 같은 간격으로 다시 몰리지 않게 한다.
      */
     Duration intervalFor(Throwable failure) {
-        if (failure instanceof PgConnectionFailedException) {
-            return randomMillis(0, policy.connectionFailedMaxWaitMillis());
+        if (!(failure instanceof PgNotProcessedException notProcessed)) {
+            return Duration.ZERO;
         }
-        if (failure instanceof PgRateLimitedException rateLimited) {
-            return retryAfterOr(rateLimited.getRetryAfter(),
+        return switch (notProcessed) {
+            case PgConnectionFailedException ignored -> randomMillis(0, policy.connectionFailedMaxWaitMillis());
+            case PgHostUnresolvedException ignored -> Duration.ZERO;
+            case PgRateLimitedException rateLimited -> retryAfterOr(rateLimited.getRetryAfter(),
                     policy.rateLimitedMinWaitMillis(), policy.rateLimitedMaxWaitMillis());
-        }
-        if (failure instanceof PgUnavailableException unavailable) {
-            return retryAfterOr(unavailable.getRetryAfter(),
+            case PgUnavailableException unavailable -> retryAfterOr(unavailable.getRetryAfter(),
                     policy.unavailableMinWaitMillis(), policy.unavailableMaxWaitMillis());
-        }
-        return Duration.ZERO;
+        };
     }
 
     private Duration retryAfterOr(@Nullable Duration retryAfter, long minMillis, long maxMillis) {

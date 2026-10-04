@@ -9,7 +9,7 @@ import com.loopers.support.error.ErrorType;
  * 조회를 잠시 기억해 바로 다시 해도 같은 결과다. 사용자에게는 연결 실패와 같은 에러 코드를 준다
  * (참고: 07_payment.md E.3·E.4).
  */
-public class PgHostUnresolvedException extends PgNotProcessedException {
+public final class PgHostUnresolvedException extends PgNotProcessedException {
 
     public PgHostUnresolvedException(String customMessage) {
         super(ErrorType.PG_CONNECTION_FAILED, customMessage);

@@ -2,10 +2,13 @@ package com.loopers.infrastructure.payment;
 
 import com.loopers.domain.payment.CardType;
 import com.loopers.domain.payment.PaymentGatewayDto;
-import com.loopers.domain.payment.PgNotProcessedException;
+import com.loopers.domain.payment.PgConnectionFailedException;
+import com.loopers.domain.payment.PgHostUnresolvedException;
+import com.loopers.domain.payment.PgRateLimitedException;
 import com.loopers.domain.payment.PgRejectedException;
 import com.loopers.domain.payment.PgResultUnknownException;
 import com.loopers.domain.payment.PgTransactionStatus;
+import com.loopers.domain.payment.PgUnavailableException;
 import com.loopers.domain.shared.Money;
 import com.loopers.support.error.CoreException;
 import org.junit.jupiter.api.DisplayName;
@@ -13,6 +16,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -21,6 +25,11 @@ import org.springframework.web.client.RestClient;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -30,6 +39,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -55,11 +65,16 @@ class PgSimulatorPaymentGatewayTest {
     private record Fixture(PgSimulatorPaymentGateway gateway, MockRestServiceServer server) {
     }
 
+    /** Retry-After 가 날짜로 오면 지금 시각과의 차이를 구하므로 시각을 고정한다. */
+    private static final Instant NOW = Instant.parse("2026-10-04T05:00:00Z");
+
     private static Fixture aGatewayBackedByMockServer() {
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 
-        return new Fixture(new PgSimulatorPaymentGateway(builder.build(), CALLBACK_URL), server);
+        return new Fixture(
+                new PgSimulatorPaymentGateway(builder.build(), CALLBACK_URL, Clock.fixed(NOW, ZoneOffset.UTC)),
+                server);
     }
 
     @Nested
@@ -168,31 +183,116 @@ class PgSimulatorPaymentGatewayTest {
         }
 
         @Test
-        @DisplayName("PG가 429로 수신을 거부하면 재시도할 수 있는 PgNotProcessedException이 발생한다")
-        void throwsNotProcessed_whenPgRespondsTooManyRequests() {
+        @DisplayName("PG가 429로 수신을 거부하면 재시도할 수 있는 PgRateLimitedException이 발생하고, Retry-After 가 없으면 대기 시간도 없다")
+        void throwsRateLimited_whenPgRespondsTooManyRequests() {
             // given
             Fixture fixture = aGatewayBackedByMockServer();
 
             fixture.server().expect(requestTo(BASE_URL + "/api/v1/payments"))
                     .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
 
-            // when & then
-            assertThatThrownBy(() -> fixture.gateway().requestApproval(aCommand()))
-                    .isInstanceOf(PgNotProcessedException.class);
+            // when
+            Throwable thrown = catchThrowable(() -> fixture.gateway().requestApproval(aCommand()));
+
+            // then
+            assertThat(thrown).isInstanceOfSatisfying(PgRateLimitedException.class,
+                    e -> assertThat(e.getRetryAfter()).isNull());
         }
 
         @Test
-        @DisplayName("PG가 503으로 수신을 거부하면 재시도할 수 있는 PgNotProcessedException이 발생한다")
-        void throwsNotProcessed_whenPgRespondsServiceUnavailable() {
+        @DisplayName("PG가 429와 Retry-After 를 초로 주면 그 시간을 예외에 담는다")
+        void carriesRetryAfterSeconds_whenPgRespondsTooManyRequests() {
+            // given
+            Fixture fixture = aGatewayBackedByMockServer();
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.RETRY_AFTER, "2");
+
+            fixture.server().expect(requestTo(BASE_URL + "/api/v1/payments"))
+                    .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).headers(headers));
+
+            // when
+            Throwable thrown = catchThrowable(() -> fixture.gateway().requestApproval(aCommand()));
+
+            // then
+            assertThat(thrown).isInstanceOfSatisfying(PgRateLimitedException.class,
+                    e -> assertThat(e.getRetryAfter()).isEqualTo(Duration.ofSeconds(2)));
+        }
+
+        @Test
+        @DisplayName("PG가 503으로 수신을 거부하면 재시도할 수 있는 PgUnavailableException이 발생하고, Retry-After 가 없으면 대기 시간도 없다")
+        void throwsUnavailable_whenPgRespondsServiceUnavailable() {
             // given
             Fixture fixture = aGatewayBackedByMockServer();
 
             fixture.server().expect(requestTo(BASE_URL + "/api/v1/payments"))
                     .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
 
-            // when & then
-            assertThatThrownBy(() -> fixture.gateway().requestApproval(aCommand()))
-                    .isInstanceOf(PgNotProcessedException.class);
+            // when
+            Throwable thrown = catchThrowable(() -> fixture.gateway().requestApproval(aCommand()));
+
+            // then
+            assertThat(thrown).isInstanceOfSatisfying(PgUnavailableException.class,
+                    e -> assertThat(e.getRetryAfter()).isNull());
+        }
+
+        @Test
+        @DisplayName("PG가 503과 Retry-After 를 날짜로 주면 지금부터 그 시각까지를 예외에 담는다")
+        void carriesRetryAfterDate_whenPgRespondsServiceUnavailable() {
+            // given
+            Fixture fixture = aGatewayBackedByMockServer();
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.RETRY_AFTER, "Sun, 04 Oct 2026 05:00:03 GMT");
+
+            fixture.server().expect(requestTo(BASE_URL + "/api/v1/payments"))
+                    .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE).headers(headers));
+
+            // when
+            Throwable thrown = catchThrowable(() -> fixture.gateway().requestApproval(aCommand()));
+
+            // then
+            assertThat(thrown).isInstanceOfSatisfying(PgUnavailableException.class,
+                    e -> assertThat(e.getRetryAfter()).isEqualTo(Duration.ofSeconds(3)));
+        }
+
+        @Test
+        @DisplayName("Retry-After 의 날짜가 이미 지났으면 대기 시간은 0이다")
+        void carriesZero_whenRetryAfterDateHasPassed() {
+            // given
+            Fixture fixture = aGatewayBackedByMockServer();
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.RETRY_AFTER, "Sun, 04 Oct 2026 04:59:00 GMT");
+
+            fixture.server().expect(requestTo(BASE_URL + "/api/v1/payments"))
+                    .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE).headers(headers));
+
+            // when
+            Throwable thrown = catchThrowable(() -> fixture.gateway().requestApproval(aCommand()));
+
+            // then
+            assertThat(thrown).isInstanceOfSatisfying(PgUnavailableException.class,
+                    e -> assertThat(e.getRetryAfter()).isEqualTo(Duration.ZERO));
+        }
+
+        /**
+         * 해석하지 못한 값으로 실패를 바꾸면 재시도할 수 있는 요청을 놓친다. 값이 없는 것과 같이 다룬다.
+         */
+        @Test
+        @DisplayName("Retry-After 를 해석할 수 없으면 대기 시간 없이 같은 예외가 발생한다")
+        void carriesNoRetryAfter_whenRetryAfterIsUnreadable() {
+            // given
+            Fixture fixture = aGatewayBackedByMockServer();
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.RETRY_AFTER, "soon");
+
+            fixture.server().expect(requestTo(BASE_URL + "/api/v1/payments"))
+                    .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).headers(headers));
+
+            // when
+            Throwable thrown = catchThrowable(() -> fixture.gateway().requestApproval(aCommand()));
+
+            // then
+            assertThat(thrown).isInstanceOfSatisfying(PgRateLimitedException.class,
+                    e -> assertThat(e.getRetryAfter()).isNull());
         }
     }
 
@@ -201,8 +301,8 @@ class PgSimulatorPaymentGatewayTest {
     class WhenPgDoesNotRespond {
 
         @Test
-        @DisplayName("연결이 거부되면 요청이 나가지 못한 것이므로 PgNotProcessedException이 발생한다")
-        void throwsNotProcessed_whenConnectionIsRefused() throws IOException {
+        @DisplayName("연결이 거부되면 요청이 나가지 못한 것이므로 재시도할 수 있는 PgConnectionFailedException이 발생한다")
+        void throwsConnectionFailed_whenConnectionIsRefused() throws IOException {
             // given
             int closedPort;
             try (ServerSocket socket = new ServerSocket(0)) {
@@ -213,7 +313,41 @@ class PgSimulatorPaymentGatewayTest {
 
             // when & then
             assertThatThrownBy(() -> gateway.requestApproval(aCommand()))
-                    .isInstanceOf(PgNotProcessedException.class);
+                    .isInstanceOf(PgConnectionFailedException.class);
+        }
+
+        /**
+         * 실제로 연결 시간 초과를 일으키는 방법(응답 없는 주소, 가득 찬 대기열)은 네트워크 환경마다 결과가 달라
+         * 테스트가 흔들린다. JDK 가 연결 단계에서 던지는 예외를 그대로 재현한다. 읽기 타임아웃과 타입이 같고
+         * 메시지만 다르다 — 이 둘을 가르지 못하면 처리 여부를 모르는 실패를 재시도하게 된다.
+         */
+        @Test
+        @DisplayName("연결이 시간 안에 맺어지지 않으면 요청이 나가지 못한 것이므로 재시도할 수 있는 PgConnectionFailedException이 발생한다")
+        void throwsConnectionFailed_whenConnectTimesOut() {
+            // given
+            Fixture fixture = aGatewayBackedByMockServer();
+
+            fixture.server().expect(requestTo(BASE_URL + "/api/v1/payments"))
+                    .andRespond(withException(new SocketTimeoutException("Connect timed out")));
+
+            // when & then
+            assertThatThrownBy(() -> fixture.gateway().requestApproval(aCommand()))
+                    .isInstanceOf(PgConnectionFailedException.class);
+        }
+
+        /**
+         * {@code .invalid} 는 어떤 DNS 에서도 풀리지 않도록 예약된 이름이다 (RFC 2606).
+         */
+        @Test
+        @DisplayName("PG 주소를 찾지 못하면 요청이 나가지 못했지만 재시도하지 않는 PgHostUnresolvedException이 발생한다")
+        void throwsHostUnresolved_whenHostCannotBeResolved() {
+            // given
+            PgSimulatorPaymentGateway gateway = new PgSimulatorPaymentGateway(
+                    PgSimulatorRestClients.create("http://pg.invalid", 500, 500), CALLBACK_URL);
+
+            // when & then
+            assertThatThrownBy(() -> gateway.requestApproval(aCommand()))
+                    .isInstanceOf(PgHostUnresolvedException.class);
         }
 
         /**

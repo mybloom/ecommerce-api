@@ -13,7 +13,7 @@ import java.time.Duration;
  * 이 타입을 실패로 세지 않는다 — PG의 건강이 아니라 우리 요청량 문제다 (참고: 07_payment.md E.4).
  */
 @Getter
-public class PgRateLimitedException extends PgNotProcessedException {
+public final class PgRateLimitedException extends PgNotProcessedException {
 
     @Nullable
     private final Duration retryAfter;

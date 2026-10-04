@@ -15,4 +15,11 @@ public class PgNotProcessedException extends CoreException {
     public PgNotProcessedException(String customMessage) {
         super(ErrorType.BAD_GATEWAY, customMessage);
     }
+
+    /**
+     * 원인별 하위 타입이 각자의 에러 코드를 정한다. 재시도 정책이 같은 단위로 나뉜다 (참고: 07_payment.md E.4)
+     */
+    protected PgNotProcessedException(ErrorType errorType, String customMessage) {
+        super(errorType, customMessage);
+    }
 }

@@ -315,7 +315,7 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
 
 ### B.5. PG 실패 예외
 
-PG 승인 요청이 실패하면 어댑터(`PgSimulatorPaymentGateway`)가 아래 타입 중 하나로 번역한다. 모두 `domain/payment`에 있다. 나눈 이유는 Payment-010(세 타입)과 E.4 정한 것 3·5번(하위 타입, 에러 코드) 참고.
+PG 승인 요청이 실패하면 어댑터(`PgSimulatorPaymentGateway`)가 아래 타입 중 하나로 번역한다. 서킷이 열려 보내지 않은 요청만 서킷 데코레이터(`CircuitBreakingPaymentGateway`)가 번역한다. 모두 `domain/payment`에 있다. 나눈 이유는 Payment-010(세 타입), E.4 정한 것 3·5번(하위 타입, 에러 코드), F.2(서킷 열림) 참고.
 
 **계층**
 
@@ -325,7 +325,8 @@ CoreException
  │  ├ PgConnectionFailedException (final)     연결 거부 · connect timeout
  │  ├ PgHostUnresolvedException   (final)     DNS 실패
  │  ├ PgRateLimitedException      (final)     429 (+ Retry-After)
- │  └ PgUnavailableException      (final)     503 (+ Retry-After)
+ │  ├ PgUnavailableException      (final)     503 (+ Retry-After)
+ │  └ PgCircuitOpenException      (final)     서킷이 열려 보내지 않음
  └ PgRejectedException                         PG가 4xx로 거절 (429 제외)
 RuntimeException
  └ PgResultUnknownException                    처리했는지 모름
@@ -350,16 +351,18 @@ RuntimeException
 | `PgHostUnresolvedException` | DNS 실패 | 안 함 (대개 설정 오류) | `FAILED`, 재고 복원 | 502 `PG_CONNECTION_FAILED` |
 | `PgRateLimitedException` | `429` | 1회, `Retry-After` 또는 500~700ms | `FAILED`, 재고 복원 | 502 `PG_RATE_LIMITED` |
 | `PgUnavailableException` | `503` | 1회, `Retry-After` 또는 300~500ms | `FAILED`, 재고 복원 | 502 `PG_UNAVAILABLE` |
+| `PgCircuitOpenException` | 서킷 열림 | 안 함 (열림 유지 동안 같은 거절) | `FAILED`, 재고 복원 | 502 `PG_CIRCUIT_OPEN` |
 | `PgRejectedException` | PG 4xx (`429` 제외) | 안 함 (같은 요청은 같은 답) | `FAILED`, 재고 복원 | 502 `Bad Gateway` |
 | `PgResultUnknownException` | `read timeout`, 5xx(`503` 제외), 응답 해석 실패 | 안 함 (이중 승인 위험) | `PENDING` 유지 | 200 + `PENDING` |
 
 - `Retry-After`가 1초(`retry-after-cap-millis`)를 넘으면 재시도하지 않고 바로 실패한다
 - 재시도 숫자는 `pg.retry.*`, 판단은 `RetryingPaymentGateway`에 있다 (참고: E.4 정한 것 6번)
+- 서킷 숫자는 `pg.circuit-breaker.*`, 무엇을 실패로 셀지는 `CircuitBreakingPaymentGateway`에 있다 (참고: F.1·F.3)
 
 **구조로 강제되는 것**
 
-- **부모 `PgNotProcessedException`은 직접 만들 수 없다** (abstract sealed). 처리되지 않은 실패는 반드시 하위 4개 중 하나로 원인이 정해진다. 하위가 `final`이라 다섯 번째 원인이 몰래 생기지 않는다
-- **결제 흐름은 부모 타입만 본다.** 보상은 `catch (CoreException)`으로 `PgNotProcessedException`·`PgRejectedException`을 함께 받는다. 원인을 구분하는 곳은 재시도 데코레이터와 에러 코드뿐이다
+- **부모 `PgNotProcessedException`은 직접 만들 수 없다** (abstract sealed). 처리되지 않은 실패는 반드시 하위 5개 중 하나로 원인이 정해진다. 하위가 `final`이라 여섯 번째 원인이 몰래 생기지 않는다
+- **결제 흐름은 부모 타입만 본다.** 보상은 `catch (CoreException)`으로 `PgNotProcessedException`·`PgRejectedException`을 함께 받는다. 원인을 구분하는 곳은 재시도·서킷 데코레이터와 에러 코드뿐이다
 - **`PgResultUnknownException`은 `CoreException`이 아니다.** 그래서 보상에 걸리지 않고 결제가 `PENDING`으로 남는다 (참고: Payment-010)
 - **`Retry-After`는 `429`·`503` 예외에만 있다.** 초(`2`)와 날짜(`Sun, 04 Oct 2026 05:00:03 GMT`) 두 형식을 어댑터가 해석한다. 지난 날짜는 0, 해석하지 못하면 없음으로 둔다
 
@@ -526,7 +529,7 @@ RuntimeException
 
     | 예외 | 사실 | 언제 | 상속 |
     |---|---|---|---|
-    | `PgNotProcessedException` | **처리되지 않았음이 확실** | 연결 불가, `connect timeout`, DNS 실패, `429`·`503` | `CoreException` (abstract sealed. 하위 4개가 각자 `ErrorType`을 가진다 — B.5) |
+    | `PgNotProcessedException` | **처리되지 않았음이 확실** | 연결 불가, `connect timeout`, DNS 실패, `429`·`503`, 서킷 열림 | `CoreException` (abstract sealed. 하위 5개가 각자 `ErrorType`을 가진다 — B.5) |
     | `PgRejectedException` | **처리했고 거절했다** | PG의 4xx 응답 (`429` 제외) | `CoreException(BAD_GATEWAY)` |
     | `PgResultUnknownException` | **처리했는지 모른다** | `read timeout`, 5xx(`503` 제외), 응답 해석 실패 | **`CoreException`이 아니다** |
 
@@ -534,13 +537,14 @@ RuntimeException
 
     | 예외 | 결제 종결·재고 복원 | 재시도 | 서킷 기록 | 응답 |
     |---|---|---|---|---|
-    | `PgNotProcessedException` | O | **O** | O | 502 |
-    | `PgRejectedException` | O | X | X | 502 |
+    | `PgNotProcessedException` | O | **O** | O (`429` 제외) | 502 |
+    | `PgRejectedException` | O | X | X (성공으로 셈) | 502 |
     | `PgResultUnknownException` | **X** (`PENDING` 유지) | X | O | 200 + `PENDING` |
 
 - **이유**:
     - **HTTP 상태로는 재시도 가능 여부를 표현할 수 없다.** 앞의 둘은 사용자에게 똑같이 502지만, 하나는 요청이 나가지도 못해 다시 보내도 되고 다른 하나는 PG가 이미 판단을 내린 것이라 다시 보내도 같은 답이다. **응답 코드는 클라이언트용이고 재시도는 우리 내부 판단이라 서로 다른 축이다**
     - `resilience4j`는 **예외 타입으로 정책을 건다.** `retryExceptions`에 `PgNotProcessedException` 하나만 올리면 되고, 서킷은 `recordExceptions`에 `PgNotProcessedException`·`PgResultUnknownException`을 올린다. 타입이 아니라 상태 코드로 갈랐다면 어댑터 안에 분기를 또 두어야 한다
+        - 구현 (2026-10-04): 서킷은 `PgNotProcessedException` 전체가 아니라 하위 타입을 나열해 기록하고, `429`는 `ignoreExceptions`로 뺐다 (F.1)
     - **`PgRejectedException`을 서킷에서 빼는 이유**는 그것이 PG의 건강 상태가 아니라 **우리 요청의 문제**이기 때문이다. 우리가 잘못된 요청을 반복해 회로를 여는 것은 진단을 흐린다
     - **`PgResultUnknownException`이 `CoreException`을 상속하지 않는 것이 핵심 장치다.** 보상은 `catch (CoreException)`에 걸려 있으므로(참고: UC-1의 T2), 이 타입은 자동으로 보상을 건너뛴다. "종결하지 않는다"가 정책이 아니라 **타입으로 강제된다**
     - `429`·`503`을 `PgRejectedException`이 아니라 `PgNotProcessedException`에 둔 이유는, 그것이 거절이 아니라 **"지금은 못 받는다"**이기 때문이다. 거래가 생기지 않았고 잠시 뒤 재시도가 정확히 옳은 대응이다
@@ -579,6 +583,7 @@ RuntimeException
     **남은 문제 셋** — ① 응답의 `transactions`가 배열이라 한 `orderId`에 거래가 여럿일 수 있는데 우리는 결제가 하나다(`orderId` UNIQUE). 어느 거래를 정답으로 볼지 규칙이 필요하다. ② `X-USER-ID`에 실을 값은 `Payment.memberId`다. ③ 배치를 `apps/commerce-batch`에 둘지 `commerce-api`의 스케줄러로 둘지 미정.
 
 - [x] **PG 요청 재시도** — E.4 "정한 것"대로 구현했다 (2026-10-04). 예외 구성은 B.5 참고. 서킷 브레이커와 보상(T2) 재시도는 따로 한다 (관련: UC-1, Payment-005, Payment-006, Payment-008, Payment-010)
+- [x] **PG 서킷 브레이커** — F절 "정한 것"대로 구현했다 (2026-10-04). 열린 회로의 거절은 `PgCircuitOpenException`으로 실패 확정된다 (관련: Payment-010, F.2)
 - [ ] **포인트 + 카드 복합 결제, 부분 결제** — `Payment.amount`가 주문 총액과 같다는 불변식과 `orderId` UNIQUE를 함께 풀어야 한다 (관련: Payment-001, Payment-002)
 - [ ] **`transactionKey` 기준 정산 대사** — PG 거래 내역과 우리 결제 내역을 맞춰보는 배치 (관련: Payment-007)
 - [ ] **보상(T2)이 실패했을 때의 복구 수단** — 원래 예외가 덮이던 것은 해결했다. `markFailedPreservingCause`가 보상 실패를 `addSuppressed`로 매달아 원래 원인과 함께 올린다. **남은 것은 보상이 돌지 못하는 경우 자체다.**
@@ -602,8 +607,8 @@ RuntimeException
 | `domain/payment` | `Payment`(수단별 `transactionKey` 불변식 포함), `PaymentStatus`, `PaymentService`, `PaymentRepository` 완료. `PaymentMethod`에 `CARD`, `CardType`·`PgTransactionStatus` 추가. PG 포트 `PaymentGateway`와 실패 예외 3종(Payment-010), `PgNotProcessedException` 하위 4종(B.5) |
 | `application/payment` | `PaymentUseCase` + `PaymentProcessor`(T0/T2, 콜백 종결) 완료. 승인(T1)은 `PaymentStrategy` 구현이 가진다 — `PointPaymentStrategy`, `CardPaymentStrategy` |
 | `interfaces/api/payment` | 결제 요청(카드 정보 조건부 검증 포함)과 콜백 엔드포인트 완료 |
-| `infrastructure/payment` | `PgSimulatorPaymentGateway` 어댑터 완료. PG 응답을 예외 타입으로 번역하고 `Retry-After`를 해석한다. `RetryingPaymentGateway`(재시도 데코레이터)를 `PgGatewayConfig`에서 감싸 빈으로 등록한다 |
-| 미구현 | 대사 배치, 서킷 브레이커 (참고: C.2, E.4 "남은 결정"). `PaymentMethod.isSettledInRequest()`는 수단 분기를 전략이 가져가 만들지 않았다 |
+| `infrastructure/payment` | `PgSimulatorPaymentGateway` 어댑터 완료. PG 응답을 예외 타입으로 번역하고 `Retry-After`를 해석한다. `RetryingPaymentGateway`(재시도, 바깥)와 `CircuitBreakingPaymentGateway`(서킷, 안쪽)를 `PgGatewayConfig`에서 감싸 빈으로 등록한다 |
+| 미구현 | 대사 배치 (참고: C.2). `PaymentMethod.isSettledInRequest()`는 수단 분기를 전략이 가져가 만들지 않았다 |
 
 > `OrderStatusTest.throwsConflict_whenSourceIsNotPending`은 전이를 열어도 **빨간불을 내지 않았다.** 목표 상태를 `AWAITING_PAYMENT`와 `ORDER_FAILED` 둘만 검사해 새로 열린 `PAID`·`PAYMENT_FAILED`와 겹치지 않았기 때문이다. 거짓이 된 것은 DisplayName의 "어디로도 전이할 수 없고"였다.
 > 지금은 출발을 실제 종결 상태로 좁히고 **목표는 `values()` 전부를 훑도록** 고쳤다. 같은 실수가 다시 조용히 지나가지 않는다.
@@ -975,6 +980,7 @@ PG: 거래가 살아 있어 1~5초 뒤 SUCCESS 콜백을 보냄
 
 **남은 결정**
 - [x] **서킷 브레이커는 이번 재시도 작업에 넣지 않고 따로 한다** (2026-10-03)
+    - 구현 (2026-10-04): F절에서 정하고 구현했다
     - 이번 재시도만으로도 범위가 크다 — 하위 예외 4개, `Retry-After` 해석, `ErrorType` 3개, 데코레이터, `pg.retry.*`, 각각의 테스트. 서킷까지 얹으면 실패했을 때 원인을 나누기 어렵다
     - 따로 정할 것이 많다
         - 임계치: 실패율 몇 %에서 열지, 최근 몇 건을 볼지, 열린 상태 유지 시간, 반쯤 열렸을 때 시험할 건수
@@ -1102,3 +1108,9 @@ PaymentGateway 빈
 **구현에 걸리는 점**
 - **서킷은 빈 하나에 상태가 쌓인다.** 스프링 컨텍스트를 공유하는 테스트에서 PG 실패를 반복하면 회로가 열려 뒤 테스트가 `PgCircuitOpenException`을 받을 수 있다. 서킷 판단은 데코레이터 단위 테스트에서 검증하고, 통합 테스트의 실패 횟수가 최소 건수(10건)에 닿는지 확인한다
 - **열림 유지 시간을 테스트에서 기다리지 않는다.** 반열림 전이는 짧은 값을 직접 넣거나 상태를 직접 바꿔 검증한다
+
+**구현 결과** (2026-10-04)
+- 결제 E2E는 `PaymentGateway`를 목으로 바꿔 서킷이 끼지 않는다. 상태가 쌓이는 문제는 생기지 않았다
+- 반열림은 열림 유지를 50ms로 넣고 그 두 배를 기다려 검증한다
+- 조립 순서는 동작으로 검증한다. 닫힌 포트로 `minimum-number-of-calls`의 절반만큼 요청하면 열린다. 서킷이 바깥이면 요청 하나가 실패 하나라 열리지 않는다
+- 테스트의 실패율은 resilience4j 기본값(50)과 다르게 둔다. 같으면 설정을 빠뜨려도 테스트가 통과한다

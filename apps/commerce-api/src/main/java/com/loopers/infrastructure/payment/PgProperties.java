@@ -11,6 +11,22 @@ public record PgProperties(
         String baseUrl,
         String callbackUrl,
         int connectTimeoutMillis,
-        int readTimeoutMillis
+        int readTimeoutMillis,
+        RetryPolicy retry
 ) {
+
+    /**
+     * 재시도의 숫자만 담는다. 대기는 무작위로 고르는 범위이고, Retry-After가 있으면 그 값을 따른다.
+     * Retry-After가 retryAfterCapMillis 를 넘으면 기다리지 않고 포기한다 (참고: 07_payment.md E.3).
+     */
+    public record RetryPolicy(
+            int maxAttempts,
+            long connectionFailedMaxWaitMillis,
+            long rateLimitedMinWaitMillis,
+            long rateLimitedMaxWaitMillis,
+            long unavailableMinWaitMillis,
+            long unavailableMaxWaitMillis,
+            long retryAfterCapMillis
+    ) {
+    }
 }

@@ -313,6 +313,58 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
 
 ---
 
+### B.5. PG 실패 예외
+
+PG 승인 요청이 실패하면 어댑터(`PgSimulatorPaymentGateway`)가 아래 타입 중 하나로 번역한다. 모두 `domain/payment`에 있다. 나눈 이유는 Payment-010(세 타입)과 E.4 정한 것 3·5번(하위 타입, 에러 코드) 참고.
+
+**계층**
+
+```
+CoreException
+ ├ PgNotProcessedException (abstract sealed)   처리되지 않았음이 확실
+ │  ├ PgConnectionFailedException (final)     연결 거부 · connect timeout
+ │  ├ PgHostUnresolvedException   (final)     DNS 실패
+ │  ├ PgRateLimitedException      (final)     429 (+ Retry-After)
+ │  └ PgUnavailableException      (final)     503 (+ Retry-After)
+ └ PgRejectedException                         PG가 4xx로 거절 (429 제외)
+RuntimeException
+ └ PgResultUnknownException                    처리했는지 모름
+```
+
+| 상위 예외 | 예외 | 뜻 | 거래 | 보상 |
+|---|---|---|---|---|
+| `CoreException` | `PgNotProcessedException` | 요청이 닿지 않았거나 PG가 받지 않았다 | 확실히 없음 | 재시도 후에도 실패하면 돈다 |
+| `CoreException` | `PgRejectedException` | PG가 거절했다 | 없음 | 돈다 |
+| `RuntimeException` | `PgResultUnknownException` | PG가 처리했는지 모른다 | 있을 수 있음 | 돌지 않는다. `CoreException`이 아니라 `catch (CoreException)`에 걸리지 않는다 |
+
+**상위 예외를 나눈 이유** — 보상이 `catch (CoreException)`에만 걸려 있어, 상위 예외가 곧 "결제를 실패로 확정해도 되는가"를 정한다
+
+- **`CoreException`:** 거래가 없음이 확실해 실패로 확정해도 안전하다. 보상이 자동으로 돌고, `ErrorType`으로 502와 에러 코드가 정해진다
+- **`RuntimeException`:** PG가 승인했을 수 있어 실패로 확정하면 안 된다. 확정하면 뒤늦은 승인 콜백이 무시되어 돈은 나갔는데 주문은 실패로 남는다. `CoreException`이 아니므로 보상이 실수로라도 돌 수 없다
+
+**타입별 처리**
+
+| 예외 | 언제 | 재시도 | 결제 | 응답 (에러 코드) |
+|---|---|---|---|---|
+| `PgConnectionFailedException` | 연결 거부, `connect timeout` | 1회, 0~200ms 무작위 대기 | `FAILED`, 재고 복원 | 502 `PG_CONNECTION_FAILED` |
+| `PgHostUnresolvedException` | DNS 실패 | 안 함 (대개 설정 오류) | `FAILED`, 재고 복원 | 502 `PG_CONNECTION_FAILED` |
+| `PgRateLimitedException` | `429` | 1회, `Retry-After` 또는 500~700ms | `FAILED`, 재고 복원 | 502 `PG_RATE_LIMITED` |
+| `PgUnavailableException` | `503` | 1회, `Retry-After` 또는 300~500ms | `FAILED`, 재고 복원 | 502 `PG_UNAVAILABLE` |
+| `PgRejectedException` | PG 4xx (`429` 제외) | 안 함 (같은 요청은 같은 답) | `FAILED`, 재고 복원 | 502 `Bad Gateway` |
+| `PgResultUnknownException` | `read timeout`, 5xx(`503` 제외), 응답 해석 실패 | 안 함 (이중 승인 위험) | `PENDING` 유지 | 200 + `PENDING` |
+
+- `Retry-After`가 1초(`retry-after-cap-millis`)를 넘으면 재시도하지 않고 바로 실패한다
+- 재시도 숫자는 `pg.retry.*`, 판단은 `RetryingPaymentGateway`에 있다 (참고: E.4 정한 것 6번)
+
+**구조로 강제되는 것**
+
+- **부모 `PgNotProcessedException`은 직접 만들 수 없다** (abstract sealed). 처리되지 않은 실패는 반드시 하위 4개 중 하나로 원인이 정해진다. 하위가 `final`이라 다섯 번째 원인이 몰래 생기지 않는다
+- **결제 흐름은 부모 타입만 본다.** 보상은 `catch (CoreException)`으로 `PgNotProcessedException`·`PgRejectedException`을 함께 받는다. 원인을 구분하는 곳은 재시도 데코레이터와 에러 코드뿐이다
+- **`PgResultUnknownException`은 `CoreException`이 아니다.** 그래서 보상에 걸리지 않고 결제가 `PENDING`으로 남는다 (참고: Payment-010)
+- **`Retry-After`는 `429`·`503` 예외에만 있다.** 초(`2`)와 날짜(`Sun, 04 Oct 2026 05:00:03 GMT`) 두 형식을 어댑터가 해석한다. 지난 날짜는 0, 해석하지 못하면 없음으로 둔다
+
+---
+
 ## C. 설계 결정
 
 > 확정된 결정과 보류된 결정을 함께 모은다. 보류된 항목이 결정되면 C.2 → C.1로 이동한다.
@@ -474,7 +526,7 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
 
     | 예외 | 사실 | 언제 | 상속 |
     |---|---|---|---|
-    | `PgNotProcessedException` | **처리되지 않았음이 확실** | 연결 불가, `connect timeout`, DNS 실패, `429`·`503` | `CoreException(BAD_GATEWAY)` |
+    | `PgNotProcessedException` | **처리되지 않았음이 확실** | 연결 불가, `connect timeout`, DNS 실패, `429`·`503` | `CoreException` (abstract sealed. 하위 4개가 각자 `ErrorType`을 가진다 — B.5) |
     | `PgRejectedException` | **처리했고 거절했다** | PG의 4xx 응답 (`429` 제외) | `CoreException(BAD_GATEWAY)` |
     | `PgResultUnknownException` | **처리했는지 모른다** | `read timeout`, 5xx(`503` 제외), 응답 해석 실패 | **`CoreException`이 아니다** |
 
@@ -526,31 +578,7 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
 
     **남은 문제 셋** — ① 응답의 `transactions`가 배열이라 한 `orderId`에 거래가 여럿일 수 있는데 우리는 결제가 하나다(`orderId` UNIQUE). 어느 거래를 정답으로 볼지 규칙이 필요하다. ② `X-USER-ID`에 실을 값은 `Payment.memberId`다. ③ 배치를 `apps/commerce-batch`에 둘지 `commerce-api`의 스케줄러로 둘지 미정.
 
-- [ ] **재시도 — 어디에 넣을 수 있는지는 정리했고, 구현은 보류한다** (관련: UC-1, Payment-005, Payment-006, Payment-008)
-
-    판단 기준은 하나다 — **"이미 처리됐을지도 모르는 일을 또 하는가."** 아니라고 확신할 수 있을 때만 안전하다.
-
-    | 후보 | 안전한가 | 값진가 |
-    |---|---|---|
-    | **콜백 재전송** (PG → 우리) | ✅ `isFinalized()`로 멱등 | **이미 하고 있다** (참고: Payment-005) |
-    | **보상(T2)의 락 타임아웃·데드락** | ✅ 트랜잭션이 통째로 롤백된다 | **가장 값지다** (아래) |
-    | **`PgNotProcessedException`** (연결 불가·`connect timeout`·DNS·`429`·`503`) | ✅ 요청이 처리되지 않았다 | 타입으로 이미 갈라뒀다 (참고: Payment-010). PG가 내려가 있으면 몇 번을 해도 실패한다 |
-    | `PgResultUnknownException` (`read timeout`) | ❌ 이중 승인 위험 | — |
-    | `PgRejectedException` (PG 4xx), `orderId` UNIQUE 위반 | ✅ | 같은 요청이라 같은 결과. **무의미** |
-    | `PgRejectedException` (PG 5xx) | ⚠️ 거래를 만든 뒤 5xx를 주는 PG면 위험 | — |
-
-    **`resilience4j`를 적용할 때는 `retryExceptions`에 `PgNotProcessedException` 하나만 올리면 된다.**
-    서킷은 `recordExceptions`에 `PgNotProcessedException`·`PgResultUnknownException`을 올리고
-    `PgRejectedException`은 뺀다 — 그것은 PG의 건강이 아니라 우리 요청의 문제다.
-
-    **보상(T2) 재시도가 가장 값진 이유** — `markFailed()`가 재고를 복원할 때 비관적 락
-    (`@Lock(PESSIMISTIC_WRITE)`)을 잡는다. 다른 주문과 경합하면 락 타임아웃이 날 수 있고, 그러면
-    보상이 통째로 실패해 **재고가 영구히 묶인다.** `markFailed()`는 `@Transactional`이라 실패 시
-    아무것도 바뀌지 않은 상태로 롤백되므로 **그대로 다시 부르는 것이 안전하다.** 경합이 원인이라
-    다음 시도에 대개 풀린다는 점에서, 넣는다면 여기가 먼저다 (관련: 아래 "보상이 실패했을 때의 복구 수단").
-
-    구현할 때는 백오프·최대 횟수·전체 타임아웃 예산을 함께 정해야 한다. **동기 요청 안에서 재시도하면
-    사용자가 그만큼 더 기다린다.**
+- [x] **PG 요청 재시도** — E.4 "정한 것"대로 구현했다 (2026-10-04). 예외 구성은 B.5 참고. 서킷 브레이커와 보상(T2) 재시도는 따로 한다 (관련: UC-1, Payment-005, Payment-006, Payment-008, Payment-010)
 - [ ] **포인트 + 카드 복합 결제, 부분 결제** — `Payment.amount`가 주문 총액과 같다는 불변식과 `orderId` UNIQUE를 함께 풀어야 한다 (관련: Payment-001, Payment-002)
 - [ ] **`transactionKey` 기준 정산 대사** — PG 거래 내역과 우리 결제 내역을 맞춰보는 배치 (관련: Payment-007)
 - [ ] **보상(T2)이 실패했을 때의 복구 수단** — 원래 예외가 덮이던 것은 해결했다. `markFailedPreservingCause`가 보상 실패를 `addSuppressed`로 매달아 원래 원인과 함께 올린다. **남은 것은 보상이 돌지 못하는 경우 자체다.**
@@ -571,11 +599,11 @@ PG가 카드 승인 결과를 알려오면 결제와 주문을 종결한다.
 | `domain/order/OrderStatus.java` | `AWAITING_PAYMENT → {PAID, PAYMENT_FAILED}` 전이 개방 완료 |
 | `domain/order/Order.java` | `paidAt`, `pay()`, `markPaymentFailed()` 추가 완료 |
 | `domain/product/Product.java` | `increaseStock(quantity)` 추가 완료 |
-| `domain/payment` | `Payment`(수단별 `transactionKey` 불변식 포함), `PaymentStatus`, `PaymentService`, `PaymentRepository` 완료. `PaymentMethod`에 `CARD`, `CardType`·`PgTransactionStatus` 추가. PG 포트 `PaymentGateway`와 실패 예외 3종(Payment-010) |
+| `domain/payment` | `Payment`(수단별 `transactionKey` 불변식 포함), `PaymentStatus`, `PaymentService`, `PaymentRepository` 완료. `PaymentMethod`에 `CARD`, `CardType`·`PgTransactionStatus` 추가. PG 포트 `PaymentGateway`와 실패 예외 3종(Payment-010), `PgNotProcessedException` 하위 4종(B.5) |
 | `application/payment` | `PaymentUseCase` + `PaymentProcessor`(T0/T2, 콜백 종결) 완료. 승인(T1)은 `PaymentStrategy` 구현이 가진다 — `PointPaymentStrategy`, `CardPaymentStrategy` |
 | `interfaces/api/payment` | 결제 요청(카드 정보 조건부 검증 포함)과 콜백 엔드포인트 완료 |
-| `infrastructure/payment` | `PgSimulatorPaymentGateway` 어댑터 완료. PG 응답을 세 예외 타입으로 번역한다 |
-| 미구현 | 대사 배치, PG 요청 재시도 (참고: C.2). `PaymentMethod.isSettledInRequest()`는 수단 분기를 전략이 가져가 만들지 않았다 |
+| `infrastructure/payment` | `PgSimulatorPaymentGateway` 어댑터 완료. PG 응답을 예외 타입으로 번역하고 `Retry-After`를 해석한다. `RetryingPaymentGateway`(재시도 데코레이터)를 `PgGatewayConfig`에서 감싸 빈으로 등록한다 |
+| 미구현 | 대사 배치, 서킷 브레이커 (참고: C.2, E.4 "남은 결정"). `PaymentMethod.isSettledInRequest()`는 수단 분기를 전략이 가져가 만들지 않았다 |
 
 > `OrderStatusTest.throwsConflict_whenSourceIsNotPending`은 전이를 열어도 **빨간불을 내지 않았다.** 목표 상태를 `AWAITING_PAYMENT`와 `ORDER_FAILED` 둘만 검사해 새로 열린 `PAID`·`PAYMENT_FAILED`와 겹치지 않았기 때문이다. 거짓이 된 것은 DisplayName의 "어디로도 전이할 수 없고"였다.
 > 지금은 출발을 실제 종결 상태로 좁히고 **목표는 `values()` 전부를 훑도록** 고쳤다. 같은 실수가 다시 조용히 지나가지 않는다.
@@ -719,3 +747,243 @@ PG: 거래가 살아 있어 1~5초 뒤 SUCCESS 콜백을 보냄
 | ④·⑤ | "PG가 거절 (4xx·5xx) → **확실히 안 생김**"으로 단정. 전제(거래 생성 전 거절)는 영향 절에만 조건문으로 있었다 | UC-1 T2' 표, Payment-008 이유·영향, Payment-010 | 5xx를 "모름"으로 옮김 |
 | ② | 다루지 않았다 | — | UC-1 T2' 표·Payment-008 이유에 추가 |
 | ⑦ | "응답 본문이 예상과 다른 형태여도 요청 거절과 같이 다룬다"를 결정으로 적어두었다 | Payment-009 영향 | "모름"으로 다룬다로 고침 |
+
+---
+
+## E. PG 요청 재시도 검토
+
+> 재시도를 구현하기 전에 지금 구조에서 고려할 것을 모은다. 결정이 나면 C.1로 올린다.
+>
+> 판단 기준은 하나다 — **"이미 처리됐을지도 모르는 일을 또 하는가."** 아니라고 확신할 수 있을 때만 안전하다. 거래가 있을 수 있는 "모름"은 재시도가 아니라 조회로 확정한다 (참고: D절, C.2 "콜백이 오지 않는 경우").
+
+### E.1. 재시도 대상
+
+| 후보 | 안전한가 | 값진가 |
+|---|---|---|
+| `PgNotProcessedException`<br>· 연결 거부<br>· `connect timeout`<br>· DNS 실패 | ✅ 연결이 맺어지기 전이라 요청이 나가지 않았다 | PG 재시작·배포 중에 흔하고 잠시 뒤 통할 가능성이 높다. DNS가 설정 오류면 몇 번을 해도 실패한다 |
+| `PgNotProcessedException`<br>· `429`<br>· `503` | ⚠️ 관례상 받기 전에 거부하는 코드라는 **가정** 위에서 → 대상에 포함 | `429`는 `Retry-After`를 따라야 의미가 있다. `503`은 일부 처리한 뒤 주는 구현이면 거래가 생겼을 수 있다 |
+| **보상(T2)**<br>· 락 타임아웃<br>· 데드락 | ✅ `markFailed()`는 `@Transactional`이라 실패하면 통째로 롤백된다 | **가장 값지다** (아래) |
+| `PgResultUnknownException`<br>· 5xx (`503` 제외)<br>· `read timeout`<br>· 응답 해석 실패 | ❌ 거래가 있을 수 있어 이중 승인 위험 | — 조회로 확정한다 |
+| · `PgRejectedException` (PG 4xx)<br>· `orderId` UNIQUE 위반 | ✅ | 같은 요청이라 같은 결과. **무의미** |
+| 콜백 재전송 (PG → 우리) | ✅ `isFinalized()`로 멱등 | 실제 PG는 보통 재전송하지만 **모의 PG는 콜백을 한 번만 보낸다** (`PaymentCoreRelay`) |
+
+**보상(T2) 재시도가 가장 값진 이유**
+- `markFailed()`가 재고를 복원할 때 비관적 락(`PESSIMISTIC_WRITE`)을 잡는다
+- 다른 주문과 경합하면 락 타임아웃이 날 수 있고, 그러면 보상이 통째로 실패해 **재고가 영구히 묶인다**
+- 실패하면 아무것도 바뀌지 않은 상태로 롤백되므로 그대로 다시 부르는 것이 안전하다
+- 경합이 원인이라 다음 시도에 대개 풀린다 (참고: C.2 "보상이 실패했을 때의 복구 수단")
+
+### E.2. 지금 구조에서 걸리는 점
+
+1. **`429`와 `503`이 같은 `PgNotProcessedException`이다.**
+    - `Retry-After`만큼 기다리기, 서킷에서 빼기를 `429`에만 걸 수 없다
+    - `429`를 별도 예외(예: `PgRateLimitedException`)로 나누고 `Retry-After` 값을 담는다
+    - 거래가 없는 경우라 `CoreException(BAD_GATEWAY)`를 상속해, 재시도가 끝나면 지금처럼 실패로 확정된다
+2. **어댑터가 `Retry-After` 헤더를 읽지 않는다.**
+    - `PgSimulatorPaymentGateway.translate(HttpStatusCode, ...)`는 상태 코드만 본다
+    - 응답 헤더까지 받아 초 단위·날짜 두 형식을 해석해야 한다
+3. **재시도를 어디에 둘지.**
+    - `CardPaymentStrategy.approve()`는 트랜잭션 밖이라 재시도하는 동안 DB 커넥션을 잡지 않는다. 어디에 두든 이 점은 지켜진다
+    - 후보: 어댑터 내부 / `PgGatewayConfig`에서 `PaymentGateway`를 감싸는 데코레이터 / 전략
+    - **재시도 정책이 도메인·응용으로 새지 않도록 infrastructure에서 감싸는 쪽**이 어댑터의 책임("응답을 세 타입으로 번역", Payment-010)과도 맞는다
+4. **사용자가 그만큼 기다린다.**
+    - 동기 요청 안에서 재시도하므로 `connect timeout`(1초) × 시도 수 + 백오프가 응답 시간에 더해진다
+    - 최대 횟수(1~2회), 백오프·지터, **전체 시간 예산**, `Retry-After` 상한(넘으면 기다리지 않고 포기)을 함께 정해야 한다
+5. **재시도가 끝나도 실패면 주문이 굳는다.**
+    - 결제 `FAILED` + 재고 복원 + 주문 `PAYMENT_FAILED` + 502다
+    - 거래가 없으니 확정은 맞지만, `orderId` UNIQUE와 재결제 경로 부재 때문에 사용자는 주문부터 새로 만들어야 한다
+    - 일반적으로는 결제 실패에도 주문을 결제 대기로 두고 같은 주문으로 다시 시도하게 한다 (참고: Payment-001, C.2 "재결제")
+6. **모의 PG는 멱등 키가 없고 같은 `orderId`를 막지 않는다.**
+    - 같은 요청을 다시 보내면 거래가 하나 더 생긴다
+    - 그래서 `503`(또는 `429`)의 "받기 전에 거부" 가정이 틀리면 재시도가 이중 거래를 만든다
+7. **`connect timeout` 판별이 예외 메시지에 기댄다.**
+    - 메시지에 "connect"가 있는지로 가른다
+    - 문구가 바뀌어 판별에 실패하면 `read timeout`(모름) 쪽으로 가므로 위험하지는 않지만, 재시도할 수 있는 경우를 놓친다
+8. **서킷 기록 대상에서 `429`를 빼야 한다.**
+    - Payment-010은 `PgNotProcessedException` 전체를 서킷에 기록한다고 되어 있다
+    - `429`는 PG의 건강이 아니라 우리 요청량 문제라, 넣으면 회로가 잘못 열린다
+9. **`resilience4j` 의존성이 아직 없다.**
+    - 어노테이션 방식(`@Retry`)은 스프링 프록시를 거쳐야 걸려, 같은 클래스 안에서 부르면 동작하지 않는다
+    - `PaymentGateway`를 감싸는 데코레이터라면 프로그래밍 방식(`Retry.decorateSupplier`)이 구조와 맞는다
+    - `429`의 대기 시간은 `intervalBiFunction`으로 시도마다 정할 수 있다
+10. **모의 PG로는 대부분 확인할 수 없다.**
+    - 모의 PG는 `429`·`503`을 내지 않는다. 일부러 내는 실패는 모두 500이다
+    - 실제로 재시도가 도는 경우는 PG가 꺼졌거나 재시작 중일 때의 연결 거부 정도다
+    - 나머지는 `MockRestServiceServer`와 닫힌 포트를 쓰는 어댑터 테스트로 검증한다
+
+### E.3. 횟수와 시간
+
+> 재시도 대상 다섯 가지는 실패하는 데 걸리는 시간과 원인이 서로 달라 같은 정책을 걸지 않는다. 지금 설정(`connect timeout` 1초, `read timeout` 3초) 기준이다.
+
+**후보별 정책**
+
+| 후보 | 실패까지 걸리는 시간 | 흔한 원인 | 최대 재시도 | 대기 (백오프 + 지터) | 추가되는 최대 시간 |
+|---|---|---|---|---|---|
+| **연결 거부** | 거의 즉시 (수 ms) | PG 재시작·배포 중 | **1회** | 0~200ms 무작위 | 약 0.2초 |
+| **`connect timeout`** | 시도마다 **1초** | 네트워크 단절, PG 과부하 | **1회** | 0~200ms 무작위 | 약 1.2초 |
+| **DNS 실패** | 거의 즉시 | 대개 설정 오류 | **0회** | — | 0 |
+| **`429`** | 즉시 | 우리가 한도를 넘게 보냄 | **1회** | `Retry-After`를 따름. 없으면 500ms + 무작위 | 최대 1초 |
+| **`503`** | 즉시 | PG 과부하·점검 | **1회** | `Retry-After`가 있으면 따름. 없으면 300~500ms 무작위 | 최대 1초 |
+
+**왜 이렇게 정했나**
+- **연결 거부, 1회:** 실패가 즉시라 재시도 비용이 거의 없다. 재시작 중인 PG는 수백 ms 안에 살아나는 경우가 많아 2회가 더 낫지만, resilience4j로 모든 대상을 1회로 통일했다 (E.4). PG 재시작이 수백 ms를 넘기면 실패가 조금 늘어난다
+- **`connect timeout`, 1회:** 한 번 시도할 때마다 1초를 그대로 쓴다. 두 번 재시도하면 사용자가 3초 넘게 기다린다. 응답이 없는 상대에게 여러 번 두드려도 결과는 대개 같다
+- **DNS 실패, 재시도 안 함:** 설정 오류면 몇 번을 해도 실패한다. JVM은 실패한 DNS 조회 결과를 기본 10초 동안 기억해(negative cache) 바로 다시 해도 같은 실패가 나온다
+- **`429`, 1회:** 다시 보내는 것 자체가 한도를 더 쓴다. `Retry-After`가 상한(1초)보다 길면 기다리지 않고 바로 포기한다
+- **`503`, 1회:** PG가 과부하 상태인데 여러 번 보내면 부하를 키운다. 한 번만 다시 보낸다
+- **지터:** 같은 시각에 실패한 요청들이 똑같은 간격으로 다시 몰리지 않게 대기 시간에 무작위를 섞는다. 0부터 백오프 값 사이에서 고르는 full jitter를 쓴다
+
+**전체 시간 예산**
+- 재시도로 추가되는 시간의 상한은 **1.5초**다. 다음 시도의 대기 시간에 예상 소요 시간을 더했을 때 예산을 넘으면 시도하지 않고 바로 포기한다
+- 최악의 경우는 `connect timeout`이다. 1초 + 0.2초 + 1초로 약 2.2초가 걸리고, 이것이 사용자가 실패 응답을 받기까지의 상한이 된다
+- `read timeout`(3초)은 재시도 대상이 아니라 예산에 들어가지 않는다
+
+**구현에 걸리는 점**
+- 후보마다 정책이 다른데, 다섯 가지가 지금은 모두 같은 `PgNotProcessedException` 하나다. 재시도 쪽에서 원인을 구분할 수 있어야 한다
+    - 예외 안에 원인 값(연결 거부·`connect timeout`·DNS·`429`·`503`)을 담거나
+    - 하위 예외로 나눈다. `429`는 어차피 `Retry-After`를 담으려고 분리해야 하니 그 연장이다
+- `resilience4j`를 쓴다면 시도마다 대기 시간을 정하는 `intervalBiFunction`에서 원인별로 다른 값을 돌려주면 된다. 다만 최대 횟수는 Retry 인스턴스 하나에 하나뿐이라, 원인별로 횟수를 다르게 하려면 `retryOnException`에서 직접 세야 한다. 직접 구현하는 쪽이 더 단순할 수 있다
+
+### E.4. resilience4j로 구현할 때
+
+> 구현은 `resilience4j`로 한다. 이렇게 하면 E.3의 정책 가운데 하나가 그대로 들어맞지 않는다.
+
+**그대로 되는 것**
+- **원인별 대기 시간:** `intervalBiFunction`이 시도마다 실패 원인을 받아 대기 시간을 돌려준다. `429`·`503`의 `Retry-After`나 원인별 백오프 + 지터를 여기서 계산한다
+- **DNS 실패 제외, `Retry-After`가 1초를 넘으면 포기:** `retryOnException` 조건에서 `false`를 돌려준다
+- **구성:** `PgGatewayConfig`에서 `PaymentGateway`를 `Retry.decorateSupplier`로 감싸는 프로그래밍 방식이 지금 구조와 맞는다. 어노테이션 방식은 쓰지 않으므로 AOP는 필요 없다
+- **서킷 브레이커와 같이 쓸 때 순서:** 바깥에 Retry, 안쪽에 CircuitBreaker를 둔다. 서킷이 열려서 나는 `CallNotPermittedException`은 재시도 대상에서 뺀다
+
+**걸리는 것: 원인별로 다른 최대 횟수**
+- Retry 인스턴스 하나에는 `maxAttempts`가 하나뿐이다
+- 그래서 "연결 거부는 2회, 나머지는 1회"를 지키려면 둘 중 하나를 해야 한다
+    - Retry를 두 겹으로 감싼다 — 한 요청 안에서 원인이 바뀌면(연결 거부 다음에 `connect timeout`) 총 시도 수가 의도보다 늘어날 수 있다
+    - 요청마다 원인별 횟수를 따로 세는 상태를 둔다 — 구조가 복잡해진다
+- 어느 쪽이든 다섯 경우가 같은 예외라, `PgNotProcessedException`에 원인 값(enum)을 담는 작업은 필요하다
+
+**정한 것** (2026-10-03)
+1. **모든 대상을 최대 1회 재시도로 통일한다** (`maxAttempts = 2`, 첫 시도 + 재시도 1회)
+    - Retry 인스턴스 하나로 모든 대상을 다룬다
+    - 시도 수가 고정돼 전체 시간 예산(최악 약 2.2초)이 구조적으로 지켜진다. resilience4j에는 "총 시간 예산" 설정이 따로 없다
+    - 대가: 연결 거부가 2회에서 1회로 준다 (E.3)
+2. **재시도는 `PgGatewayConfig`에서 `PaymentGateway` 빈을 `Retry.decorateSupplier`로 감싸는 데코레이터에 둔다**
+    - 재시도 정책이 domain·application으로 새지 않는다. 도메인은 `PaymentGateway` 포트만 안다
+    - 어댑터는 "응답을 예외 타입으로 번역"하는 책임만 맡는다 (Payment-010)
+    - `CardPaymentStrategy.approve()`는 트랜잭션 밖이라, 재시도로 기다리는 동안 DB 커넥션을 잡지 않는다
+    - 어댑터 테스트는 데코레이터 없이 번역만, 재시도는 데코레이터 테스트로 나눠 검증할 수 있다
+3. **원인은 예외 타입으로 구분한다 — 재시도 정책이 다른 단위로 묶은 하위 타입 4개**
+
+    ```
+    PgNotProcessedException (sealed, CoreException(BAD_GATEWAY) 상속은 그대로)
+     ├ PgConnectionFailedException   연결 거부 · connect timeout         재시도, 0~200ms 지터
+     ├ PgHostUnresolvedException     DNS 실패                           재시도 안 함
+     ├ PgRateLimitedException        429 (+ Retry-After)                재시도, 서킷 제외
+     └ PgUnavailableException        503 (+ Retry-After, 없을 수 있음)    재시도, 서킷 기록
+    ```
+
+    - 원인 하나에 예외 하나가 아니라 **재시도 정책이 같으면 한 타입**으로 묶는다
+    - 연결 거부와 `connect timeout`을 묶는 이유: 둘 다 "요청이 나가지 못했다"이고, 대기도 0~200ms 무작위로 같다
+    - 부모를 그대로 두는 이유: 보상(`catch (CoreException)`), 기존 테스트의 `isInstanceOf(PgNotProcessedException.class)`, `retryExceptions(PgNotProcessedException.class)`가 그대로 동작한다
+    - DNS도 타입을 나눠, Retry 설정에서 `ignoreExceptions(PgHostUnresolvedException.class)`로 빼기만 하면 된다
+
+> **예외 타입으로 나눈 이유 (참고)**
+>
+> 좋은 점
+> - **resilience4j 설정을 클래스로 걸 수 있다.** `retryExceptions`·`ignoreExceptions`(Retry·CircuitBreaker 양쪽)가 클래스를 받으므로 조건 함수를 직접 쓰는 것보다 선언적이다. "`429`는 서킷에서 뺀다"가 `ignoreExceptions(PgRateLimitedException.class)` 한 줄이 된다
+> - **필요한 데이터를 필요한 타입만 가진다.** `Retry-After`는 `429`·`503` 예외에만 둔다. enum 방식처럼 대부분 비어 있는 필드가 생기지 않는다
+> - **Payment-010의 원칙과 같다.** "정책은 예외 타입이 정한다"로 세 타입을 나눈 것의 연장선이다
+> - **빠뜨린 경우를 컴파일러가 잡는다.** Java 21의 sealed 클래스와 패턴 매칭 `switch`를 쓰면 `intervalBiFunction`에서 원인 하나를 빠뜨렸을 때 컴파일 에러가 난다
+>
+> 대가
+> - 예외 클래스가 네 개 늘어난다
+> - 어댑터의 번역 로직이 한 타입이 아니라 네 타입을 고르도록 조금 늘어난다
+> - 어댑터 테스트의 기대 타입이 하위 타입으로 구체화된다 (예: 연결 거부 → `PgConnectionFailedException`)
+>
+> enum 방식과 비교하면 클래스 수는 늘지만, resilience4j 설정과 서킷 제외가 단순해지고 `Retry-After`가 필요한 곳에만 있다는 점에서 지금 구조에 더 맞는다
+
+4. **재시도가 끝난 `PgNotProcessedException`(`429` 포함)은 HTTP 502로 응답하고, 응답 본문의 에러 코드로 원인을 구분한다** (2026-10-03)
+    - 에러 코드 예: `PG_RATE_LIMITED`, `PG_UNAVAILABLE`, `PG_CONNECTION_FAILED`. 클라이언트가 "일시적으로 결제가 몰렸습니다. 잠시 후 다시 주문해 주세요" 같은 안내를 고를 수 있게 한다
+    - PG가 준 `Retry-After`는 클라이언트에 그대로 전달하지 않는다. PG가 우리 서버에 준 값이고, 클라이언트의 다음 행동(새 주문)과 맞지 않는다
+    - **재검토 시점:** 재결제 경로가 생겨 결제 실패에도 주문이 결제 대기로 남게 되면 503 + `Retry-After`로 바꾼다. 그때는 클라이언트가 같은 주문으로 다시 결제할 수 있어 503이 정확한 뜻이 된다
+
+> **`429`를 502로 응답하는 이유 (참고)**
+>
+> | 응답 | 뜻 | 지금 구조에서 |
+> |---|---|---|
+> | `429` | 클라이언트 당신이 너무 많이 보냈다 | ❌ 사용자는 한 번 눌렀을 뿐이다. 한도를 넘긴 쪽은 우리 서버라 뜻이 틀린다 |
+> | `503` + `Retry-After` | 지금은 못 하니 잠시 뒤 **같은 요청**을 다시 보내라 | ⚠️ 뜻은 가장 가깝다. 하지만 재시도가 끝나면 주문을 `PAYMENT_FAILED`로 확정하므로, 같은 요청을 다시 보내도 "결제할 수 없는 주문"으로 거절된다. **응답이 약속하는 행동을 서버가 받아 주지 못한다** |
+> | `502` | 상류(PG) 문제로 처리하지 못했다 | ✅ 연결 실패·`503`과 같은 결과(주문 실패 확정)라 일관된다 |
+>
+> - **응답 코드는 클라이언트가 할 수 있는 일과 맞아야 한다.** 지금 재시도가 끝난 뒤 클라이언트가 할 수 있는 일은 주문부터 새로 만드는 것뿐이다. 503을 주면 클라이언트는 같은 결제를 다시 보내라는 뜻으로 읽는다
+> - **구현할 때 확인할 것:** 지금 `CoreException(ErrorType.BAD_GATEWAY, ...)`는 에러 코드가 `BAD_GATEWAY` 하나뿐이다. 원인별로 나누려면 `ErrorType`에 항목을 추가하거나(예: `PG_RATE_LIMITED(502, ...)`), 하위 예외가 각자 다른 `ErrorType`을 쓰게 한다
+
+5. **에러 코드는 `ErrorType`에 항목을 추가해 나눈다** (2026-10-03)
+
+    | 하위 예외 | `ErrorType` | HTTP | 메시지 (예) |
+    |---|---|---|---|
+    | `PgConnectionFailedException` | `PG_CONNECTION_FAILED` | 502 | 결제 서버에 연결하지 못했습니다. 잠시 후 다시 주문해 주세요. |
+    | `PgHostUnresolvedException` | `PG_CONNECTION_FAILED` | 502 | 위와 같음 |
+    | `PgRateLimitedException` | `PG_RATE_LIMITED` | 502 | 결제 요청이 몰리고 있습니다. 잠시 후 다시 주문해 주세요. |
+    | `PgUnavailableException` | `PG_UNAVAILABLE` | 502 | 결제 서버가 일시적으로 응답하지 않습니다. 잠시 후 다시 주문해 주세요. |
+    | `PgRejectedException` (PG 4xx) | `BAD_GATEWAY` (그대로) | 502 | 외부 시스템 연동에 실패했습니다. |
+
+    - HTTP 상태는 모두 502로 같고, 클라이언트는 **에러 코드**로 안내를 고른다 (4번)
+    - DNS 실패는 사용자에게 연결 실패와 다를 게 없어 같은 코드를 쓴다. 원인은 예외 타입과 로그로 구분한다
+    - `PgRejectedException`은 대개 우리 설정 오류라 사용자가 할 수 있는 일이 없다. 지금의 `BAD_GATEWAY`를 그대로 둔다
+    - **기존 관례와 다른 점:** 지금 `ErrorType`의 `code`는 HTTP reason phrase(`"Bad Gateway"` 등)다. 새 항목은 같은 502라 reason phrase로는 구분되지 않으므로 `code`에 `"PG_RATE_LIMITED"` 같은 고유 문자열을 쓴다
+
+6. **설정은 숫자만 yml(`pg.retry.*`)에, 판단은 코드(`PgGatewayConfig`)에 둔다** (2026-10-03)
+
+    ```yaml
+    pg:
+      retry:
+        max-attempts: 2
+        connection-failed-max-wait-millis: 200
+        rate-limited-min-wait-millis: 500
+        rate-limited-max-wait-millis: 700
+        unavailable-min-wait-millis: 300
+        unavailable-max-wait-millis: 500
+        retry-after-cap-millis: 1000
+    ```
+
+    - 구현 (2026-10-04): 판단은 `RetryingPaymentGateway`에 두고 `PgGatewayConfig`는 조립만 한다. 대기 범위는 최소·최대 두 키로 나눴다
+
+    - yml에는 숫자만 둔다. PG 설정이 이미 `PgProperties`(`pg.*`)로 묶여 있어 그 옆에 둔다
+    - 코드에는 어떤 예외를 재시도하는지, 타입별 대기를 어떻게 계산하는지를 sealed 타입의 패턴 매칭 `switch`로 쓴다. 숫자는 `PgProperties`에서 받는다
+    - 테스트에서는 숫자만 0으로 바꾸거나 데코레이터 단위 테스트에서 0을 직접 넣는다 (아래 "직접 구현해야 하는 것" 4번)
+
+> **yml과 코드로 나눈 이유 (참고)**
+>
+> | 정책 | yml(resilience4j 설정)로 되나 |
+> |---|---|
+> | 최대 횟수 (`maxAttempts = 2`) | ✅ |
+> | 고정 대기, 지수 백오프, 무작위 대기 | ✅ 단, 모든 예외에 같은 값 |
+> | 예외 타입별로 다른 대기 (연결 실패 0~200ms, `503` 300~500ms, `429` 500ms) | ❌ `intervalBiFunction`은 코드로만 걸 수 있다 |
+> | `Retry-After`를 읽어 그만큼 대기 | ❌ 예외에 담긴 값을 꺼내는 코드가 필요하다 |
+> | `Retry-After`가 1초를 넘으면 포기 | ❌ `retryOnException` 조건 함수 |
+> | DNS 실패 제외 (`ignoreExceptions`) | ✅ 클래스 이름으로 가능. 다만 코드와 떨어져 있어 오타를 컴파일러가 못 잡는다 |
+>
+> - **좋은 점:** 테스트에서 대기를 0으로 줄이기 쉽다 / 환경별로 값을 재배포 없이 바꿀 수 있다 / 판단 로직이 sealed 타입과 한곳에 있어 빠뜨린 경우를 컴파일러가 잡는다
+> - **resilience4j의 yml 설정(`resilience4j.retry.instances.*`)을 쓰지 않는 이유:** 스타터·레지스트리 구성인데, 결국 `intervalBiFunction`과 조건 함수를 코드로 덧붙여야 해 설정이 yml과 코드 두 곳으로 갈라진다. 우리 정책은 대부분이 코드 쪽 판단이라 숫자만 `PgProperties`로 받는 쪽이 한곳에서 읽힌다
+> - **다시 볼 때:** 서킷 브레이커를 넣고 actuator로 상태를 보고 싶어지면 스타터 쪽이 편해진다. 서킷 결정과 같이 다시 본다
+
+**resilience4j를 써도 직접 구현해야 하는 것** — 라이브러리는 재시도 실행·대기·서킷만 해 준다. 그 판단에 쓸 재료는 우리가 만든다
+1. **원인 구분:** 어떤 실패인지(연결 거부·`connect timeout`·DNS·`429`·`503`) 하위 예외 타입으로 나눈다 (정한 것 3번)
+2. **`Retry-After` 읽기:** 어댑터가 응답 헤더를 받아 초 단위·날짜 두 형식을 해석해 예외에 담는다
+3. **서킷에서 `429` 빼기:** CircuitBreaker의 `ignoreExceptions`나 기록 조건으로 `429`만 거른다. 1번이 있어야 가능하다
+4. **테스트의 대기 시간:** 지터가 무작위이고 실제로 sleep한다. 테스트에서 대기를 0으로 줄일 수 있게 설정을 밖에서 주입한다
+
+**남은 결정**
+- [x] **서킷 브레이커는 이번 재시도 작업에 넣지 않고 따로 한다** (2026-10-03)
+    - 이번 재시도만으로도 범위가 크다 — 하위 예외 4개, `Retry-After` 해석, `ErrorType` 3개, 데코레이터, `pg.retry.*`, 각각의 테스트. 서킷까지 얹으면 실패했을 때 원인을 나누기 어렵다
+    - 따로 정할 것이 많다
+        - 임계치: 실패율 몇 %에서 열지, 최근 몇 건을 볼지, 열린 상태 유지 시간, 반쯤 열렸을 때 시험할 건수
+        - 무엇을 실패로 셀지: `503`·연결 실패는 세고 `429`는 뺀다. "모름"(5xx·`read timeout`)을 셀지는 아직 정하지 않았다
+        - 열려서 거절된 요청의 응답: 요청이 나가지 않았으니 확실한 실패라 `FAILED` + 502가 된다. PG가 아픈 동안 들어온 주문이 전부 실패로 굳는다
+        - 모니터링: actuator로 상태를 볼지 — 이때 resilience4j 스타터를 다시 본다 (6번)
+    - 모의 PG에서는 값을 따로 맞춰야 한다. 40%의 500이 이제 "모름"이라, 이를 실패로 세면 평소 실패율이 40% 가까이 나와 흔한 임계치(50%) 근처에서 회로가 자주 열린다
+    - 지금 얻는 효과가 작다. 재시도 1회, 짧은 timeout이라 PG가 완전히 죽어도 요청 하나가 붙잡는 시간은 최대 약 2.2초다. 서킷의 효과는 장애가 길고 트래픽이 많을 때 커진다
+    - **이번 재시도에서 미리 해 둘 것**
+        - 데코레이터를 `PgGatewayConfig` 한곳에서 조립해, 나중에 Retry(바깥)·CircuitBreaker(안쪽)를 같은 자리에 추가할 수 있게 한다
+        - 재시도 대상을 `PgNotProcessedException` 하위 타입으로만 한정해, 나중의 `CallNotPermittedException`(서킷이 열려 거절)이 자동으로 재시도에서 빠지게 한다
+- [x] 보상(T2) 재시도는 이번 PG 재시도 작업에 넣지 않고 따로 한다 (2026-10-03). 대상(락 타임아웃·데드락 같은 DB 예외만), 횟수, 락 대기 시간(MySQL 기본 50초)을 그때 정한다 (참고: E.1, C.2 "보상이 실패했을 때의 복구 수단")

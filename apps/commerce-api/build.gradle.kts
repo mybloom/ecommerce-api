@@ -35,6 +35,9 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${project.properties["springDocOpenApiVersion"]}")
     implementation ("org.springframework.security:spring-security-crypto")
 
+    // resilience — PG 요청 재시도. 데코레이터로 직접 조립하므로 스타터 없이 코어만 쓴다 (07_payment.md E.4)
+    implementation("io.github.resilience4j:resilience4j-retry:${project.properties["resilience4jVersion"]}")
+
     // querydsl
     annotationProcessor("com.querydsl:querydsl-apt::jakarta")
     annotationProcessor("jakarta.persistence:jakarta.persistence-api")

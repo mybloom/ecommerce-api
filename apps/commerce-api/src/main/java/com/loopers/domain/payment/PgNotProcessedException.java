@@ -10,9 +10,13 @@ import com.loopers.support.error.ErrorType;
  * <b>재시도가 안전한 유일한 타입이다.</b> 거래가 없으므로 다시 보내도 이중 승인이 되지 않는다
  * (참고: Payment-010).
  */
-public class PgNotProcessedException extends CoreException {
+public abstract sealed class PgNotProcessedException extends CoreException
+        permits PgConnectionFailedException, PgHostUnresolvedException, PgRateLimitedException, PgUnavailableException {
 
-    public PgNotProcessedException(String customMessage) {
-        super(ErrorType.BAD_GATEWAY, customMessage);
+    /**
+     * 원인별 하위 타입이 각자의 에러 코드를 정한다. 재시도 정책이 같은 단위로 나뉜다 (참고: 07_payment.md E.4)
+     */
+    protected PgNotProcessedException(ErrorType errorType, String customMessage) {
+        super(errorType, customMessage);
     }
 }

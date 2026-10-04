@@ -17,9 +17,14 @@ import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PaymentGatewayDto;
 import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PaymentStatus;
+import com.loopers.domain.payment.PgConnectionFailedException;
+import com.loopers.domain.payment.PgHostUnresolvedException;
+import com.loopers.domain.payment.PgNotProcessedException;
+import com.loopers.domain.payment.PgRateLimitedException;
 import com.loopers.domain.payment.PgRejectedException;
 import com.loopers.domain.payment.PgResultUnknownException;
 import com.loopers.domain.payment.PgTransactionStatus;
+import com.loopers.domain.payment.PgUnavailableException;
 import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointRepository;
 import com.loopers.domain.point.PointServiceDto;
@@ -35,6 +40,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -46,8 +54,10 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -64,6 +74,15 @@ class PaymentV1ApiE2ETest {
     private static final String HEADER_OF_MEMBER_ID = "X-MEMBER-ID";
     private static final int ORDER_QUANTITY = 2;
     private static final Long ORDER_AMOUNT = ProductFixture.DEFAULT_PRICE.getAmount() * ORDER_QUANTITY;
+
+    static Stream<Arguments> notProcessedFailures() {
+        return Stream.of(
+                Arguments.of(new PgConnectionFailedException("PG에 연결하지 못했습니다."), "PG_CONNECTION_FAILED"),
+                Arguments.of(new PgHostUnresolvedException("PG 주소를 찾지 못했습니다."), "PG_CONNECTION_FAILED"),
+                Arguments.of(new PgRateLimitedException("PG가 요청 한도를 넘었다고 알렸습니다.", Duration.ofSeconds(1)), "PG_RATE_LIMITED"),
+                Arguments.of(new PgUnavailableException("PG가 지금은 요청을 받을 수 없다고 알렸습니다.", null), "PG_UNAVAILABLE")
+        );
+    }
 
     private Member member;
     private Brand brand;
@@ -360,6 +379,35 @@ class PaymentV1ApiE2ETest {
 
             assertAll(
                     () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY),
+                    () -> assertThat(failedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED),
+                    () -> assertThat(restoredStock).isEqualTo(initialStock)
+            );
+        }
+
+        /**
+         * 재시도가 끝난 뒤의 최종 결과다. HTTP 상태는 모두 502로 같고, 클라이언트는 에러 코드로
+         * 안내를 고른다 (참고: 07_payment.md E.4 정한 것 4·5번).
+         */
+        @ParameterizedTest(name = "{0} → {1}")
+        @MethodSource("com.loopers.interfaces.api.payment.PaymentV1ApiE2ETest#notProcessedFailures")
+        @DisplayName("PG가 요청을 처리하지 않은 실패가 exception 이면 502와 errorCode 를 반환하고, 주문은 결제실패가 되며 확보했던 재고가 복원된다")
+        void returnsBadGatewayWithErrorCode_whenPgDidNotProcess(PgNotProcessedException exception, String errorCode) {
+            // given
+            when(paymentGateway.requestApproval(any())).thenThrow(exception);
+            int initialStock = ProductFixture.DEFAULT_STOCK.getValue();
+            String orderNumber = anAwaitingPaymentOrderNumber(member.getId());
+
+            // when
+            ResponseEntity<ApiResponse<PaymentV1Dto.PayResponse>> response =
+                    requestCardPayment(member.getId(), orderNumber);
+
+            // then
+            Order failedOrder = findOrder(orderNumber);
+            int restoredStock = findStockOf(product);
+
+            assertAll(
+                    () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY),
+                    () -> assertThat(response.getBody().meta().errorCode()).isEqualTo(errorCode),
                     () -> assertThat(failedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED),
                     () -> assertThat(restoredStock).isEqualTo(initialStock)
             );

@@ -29,6 +29,15 @@ pg:
   callback-url: http://localhost:8080/api/v1/payments/pg/callback
   connect-timeout-millis: 1000
   read-timeout-millis: 3000
+  # 재시도 숫자만 여기 둔다. 무엇을 재시도하고 대기를 어떻게 고를지는 RetryingPaymentGateway 에 있다 (07_payment.md E.3·E.4)
+  retry:
+    max-attempts: 2
+    connection-failed-max-wait-millis: 200
+    rate-limited-min-wait-millis: 500
+    rate-limited-max-wait-millis: 700
+    unavailable-min-wait-millis: 300
+    unavailable-max-wait-millis: 500
+    retry-after-cap-millis: 1000
 
 springdoc:
   use-fqn: true

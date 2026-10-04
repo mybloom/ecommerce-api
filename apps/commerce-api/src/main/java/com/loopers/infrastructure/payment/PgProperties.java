@@ -12,7 +12,8 @@ public record PgProperties(
         String callbackUrl,
         int connectTimeoutMillis,
         int readTimeoutMillis,
-        RetryPolicy retry
+        RetryPolicy retry,
+        CircuitBreakerPolicy circuitBreaker
 ) {
 
     /**
@@ -27,6 +28,20 @@ public record PgProperties(
             long unavailableMinWaitMillis,
             long unavailableMaxWaitMillis,
             long retryAfterCapMillis
+    ) {
+    }
+
+    /**
+     * 서킷 브레이커의 숫자만 담는다. 최근 slidingWindowSize 건(호출 수 기준) 중 실패율이 failureRateThreshold(%) 이상이면
+     * 열리고, waitDurationInOpenStateMillis 뒤 permittedNumberOfCallsInHalfOpenState 건으로 시험한다
+     * (참고: 07_payment.md F.3).
+     */
+    public record CircuitBreakerPolicy(
+            int slidingWindowSize,
+            int minimumNumberOfCalls,
+            float failureRateThreshold,
+            long waitDurationInOpenStateMillis,
+            int permittedNumberOfCallsInHalfOpenState
     ) {
     }
 }

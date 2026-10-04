@@ -3,6 +3,7 @@ package com.loopers.infrastructure.payment;
 import com.loopers.domain.payment.CardType;
 import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PaymentGatewayDto;
+import com.loopers.domain.payment.PgCircuitOpenException;
 import com.loopers.domain.payment.PgResultUnknownException;
 import com.loopers.domain.shared.Money;
 import org.junit.jupiter.api.DisplayName;
@@ -18,7 +19,8 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
- * 재시도는 PG 어댑터를 감싸는 데코레이터에 두고, 조립은 이 설정 한곳에서 한다 (참고: 07_payment.md E.4 정한 것 2번).
+ * 재시도와 서킷은 PG 어댑터를 감싸는 데코레이터에 두고, 조립은 이 설정 한곳에서 한다
+ * (참고: 07_payment.md E.4 정한 것 2번, F.4).
  */
 class PgGatewayConfigTest {
 
@@ -36,6 +38,12 @@ class PgGatewayConfigTest {
     private static final long UNAVAILABLE_MAX_WAIT_MILLIS = 500;
     private static final long RETRY_AFTER_CAP_MILLIS = 1_000;
 
+    private static final int SLIDING_WINDOW_SIZE = 20;
+    private static final int MINIMUM_NUMBER_OF_CALLS = 10;
+    private static final float FAILURE_RATE_THRESHOLD = 50;
+    private static final long WAIT_DURATION_IN_OPEN_STATE_MILLIS = 10_000;
+    private static final int PERMITTED_NUMBER_OF_CALLS_IN_HALF_OPEN_STATE = 3;
+
     private static final PgProperties PROPERTIES = new PgProperties(
             BASE_URL,
             CALLBACK_URL,
@@ -48,7 +56,16 @@ class PgGatewayConfigTest {
                     RATE_LIMITED_MAX_WAIT_MILLIS,
                     UNAVAILABLE_MIN_WAIT_MILLIS,
                     UNAVAILABLE_MAX_WAIT_MILLIS,
-                    RETRY_AFTER_CAP_MILLIS));
+                    RETRY_AFTER_CAP_MILLIS),
+            new PgProperties.CircuitBreakerPolicy(
+                    SLIDING_WINDOW_SIZE,
+                    MINIMUM_NUMBER_OF_CALLS,
+                    FAILURE_RATE_THRESHOLD,
+                    WAIT_DURATION_IN_OPEN_STATE_MILLIS,
+                    PERMITTED_NUMBER_OF_CALLS_IN_HALF_OPEN_STATE));
+
+    private static final PaymentGatewayDto.ApprovalCommand COMMAND = new PaymentGatewayDto.ApprovalCommand(
+            135135L, "20260828-A3F9K2QP", CardType.SAMSUNG, "1234-5678-9814-1451", Money.of(5_000L));
 
     @Test
     @DisplayName("PaymentGateway 빈은 PG 어댑터를 재시도 데코레이터로 감싼 것이다")
@@ -58,6 +75,37 @@ class PgGatewayConfigTest {
 
         // then
         assertThat(gateway).isInstanceOf(RetryingPaymentGateway.class);
+    }
+
+    /**
+     * 서킷이 재시도 안쪽에 있어야 시도 하나하나가 실패로 기록된다. 바깥에 있으면 요청 하나가 실패 하나라,
+     * minimumNumberOfCalls 의 절반만큼 요청해서는 열리지 않는다.
+     */
+    @Test
+    @DisplayName("maxAttempts 가 2일 때 PG에 연결하지 못하는 요청을 minimumNumberOfCalls 의 절반만큼 보내면 회로가 열려, 다음 요청은 서킷이 열린 실패로 끝난다")
+    void recordsEachRetryAttempt_inCircuitBreaker() throws IOException {
+        // given
+        int closedPort;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            closedPort = socket.getLocalPort();
+        }
+        PgProperties properties = new PgProperties(
+                "http://localhost:" + closedPort,
+                CALLBACK_URL,
+                CONNECT_TIMEOUT_MILLIS,
+                READ_TIMEOUT_MILLIS,
+                new PgProperties.RetryPolicy(MAX_ATTEMPTS, 0, 0, 0, 0, 0, RETRY_AFTER_CAP_MILLIS),
+                PROPERTIES.circuitBreaker());
+        PaymentGateway gateway = new PgGatewayConfig().paymentGateway(properties);
+        for (int i = 0; i < MINIMUM_NUMBER_OF_CALLS / MAX_ATTEMPTS; i++) {
+            catchThrowable(() -> gateway.requestApproval(COMMAND));
+        }
+
+        // when
+        Throwable thrown = catchThrowable(() -> gateway.requestApproval(COMMAND));
+
+        // then
+        assertThat(thrown).isInstanceOf(PgCircuitOpenException.class);
     }
 
     /**
@@ -87,14 +135,13 @@ class PgGatewayConfigTest {
                     CALLBACK_URL,
                     longConnectTimeoutMillis,
                     shortReadTimeoutMillis,
-                    PROPERTIES.retry());
+                    PROPERTIES.retry(),
+                    PROPERTIES.circuitBreaker());
             PaymentGateway gateway = new PgGatewayConfig().paymentGateway(properties);
-            PaymentGatewayDto.ApprovalCommand command = new PaymentGatewayDto.ApprovalCommand(
-                    135135L, "20260828-A3F9K2QP", CardType.SAMSUNG, "1234-5678-9814-1451", Money.of(5_000L));
 
             // when
             long startedAt = System.nanoTime();
-            Throwable thrown = catchThrowable(() -> gateway.requestApproval(command));
+            Throwable thrown = catchThrowable(() -> gateway.requestApproval(COMMAND));
             Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
 
             // then

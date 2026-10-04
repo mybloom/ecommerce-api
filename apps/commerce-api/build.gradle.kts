@@ -37,6 +37,8 @@ dependencies {
 
     // resilience — PG 요청 재시도. 데코레이터로 직접 조립하므로 스타터 없이 코어만 쓴다 (07_payment.md E.4)
     implementation("io.github.resilience4j:resilience4j-retry:${project.properties["resilience4jVersion"]}")
+    // PG 서킷 브레이커. 재시도와 같은 방식으로 PgGatewayConfig 에서 조립한다 (07_payment.md F.4)
+    implementation("io.github.resilience4j:resilience4j-circuitbreaker:${project.properties["resilience4jVersion"]}")
 
     // querydsl
     annotationProcessor("com.querydsl:querydsl-apt::jakarta")

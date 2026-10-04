@@ -3,6 +3,7 @@ package com.loopers.infrastructure.payment;
 import com.loopers.domain.payment.CardType;
 import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PaymentGatewayDto;
+import com.loopers.domain.payment.PgCircuitOpenException;
 import com.loopers.domain.payment.PgConnectionFailedException;
 import com.loopers.domain.payment.PgHostUnresolvedException;
 import com.loopers.domain.payment.PgRateLimitedException;
@@ -204,6 +205,27 @@ class RetryingPaymentGatewayTest {
         void throwsWithoutRetry_whenRetryAfterExceedsCap() {
             // given
             PgRateLimitedException failure = new PgRateLimitedException("PG가 요청 한도를 넘었다고 알렸습니다.", Duration.ofSeconds(2));
+            ScriptedGateway pg = new ScriptedGateway(failure, APPROVAL);
+            RetryingPaymentGateway gateway = new RetryingPaymentGateway(pg, NO_WAIT_POLICY);
+
+            // when
+            Throwable thrown = catchThrowable(() -> gateway.requestApproval(COMMAND));
+
+            // then
+            assertAll(
+                    () -> assertThat(thrown).isSameAs(failure),
+                    () -> assertThat(pg.calls).isEqualTo(1)
+            );
+        }
+
+        /**
+         * 열린 회로는 열림 유지 시간 동안 닫히지 않아, 바로 다시 보내도 같은 거절을 받는다 (참고: 07_payment.md F.2).
+         */
+        @Test
+        @DisplayName("서킷이 열려 거절되면 한 번만 부르고 그대로 던진다")
+        void throwsWithoutRetry_whenCircuitIsOpen() {
+            // given
+            PgCircuitOpenException failure = new PgCircuitOpenException("PG 서킷이 열려 요청을 보내지 않았습니다.");
             ScriptedGateway pg = new ScriptedGateway(failure, APPROVAL);
             RetryingPaymentGateway gateway = new RetryingPaymentGateway(pg, NO_WAIT_POLICY);
 

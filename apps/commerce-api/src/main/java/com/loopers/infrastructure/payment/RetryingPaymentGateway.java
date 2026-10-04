@@ -2,6 +2,7 @@ package com.loopers.infrastructure.payment;
 
 import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PaymentGatewayDto;
+import com.loopers.domain.payment.PgCircuitOpenException;
 import com.loopers.domain.payment.PgConnectionFailedException;
 import com.loopers.domain.payment.PgHostUnresolvedException;
 import com.loopers.domain.payment.PgNotProcessedException;
@@ -55,7 +56,7 @@ public class RetryingPaymentGateway implements PaymentGateway {
     }
 
     /**
-     * DNS 실패는 대개 설정 오류라 빠진다. Retry-After가 상한을 넘으면 사용자를 그만큼 붙잡지 않고 포기한다.
+     * DNS 실패는 대개 설정 오류라 빠진다. 열린 서킷은 열림 유지 시간 동안 닫히지 않아 빠진다. Retry-After가 상한을 넘으면 사용자를 그만큼 붙잡지 않고 포기한다.
      * <p>
      * 처리되지 않은 실패는 sealed 타입이라 {@code switch}에 default가 없다. 원인이 늘면 여기서 컴파일 에러가 난다.
      */
@@ -68,6 +69,7 @@ public class RetryingPaymentGateway implements PaymentGateway {
             case PgHostUnresolvedException ignored -> false;
             case PgRateLimitedException rateLimited -> isWithinCap(rateLimited.getRetryAfter());
             case PgUnavailableException unavailable -> isWithinCap(unavailable.getRetryAfter());
+            case PgCircuitOpenException ignored -> false;
         };
     }
 
@@ -90,6 +92,7 @@ public class RetryingPaymentGateway implements PaymentGateway {
                     policy.rateLimitedMinWaitMillis(), policy.rateLimitedMaxWaitMillis());
             case PgUnavailableException unavailable -> retryAfterOr(unavailable.getRetryAfter(),
                     policy.unavailableMinWaitMillis(), policy.unavailableMaxWaitMillis());
+            case PgCircuitOpenException ignored -> Duration.ZERO;
         };
     }
 

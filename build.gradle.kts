@@ -136,7 +136,8 @@ subprojects {
             classDirectories.setFrom(
                 files(
                     classDirectories.files.map {
-                        fileTree(it)
+                        // QueryDSL 이 생성한 Q 클래스(QOrder 등)는 뺀다. QueryDslConfig 처럼 Q 뒤가 소문자인 클래스는 남긴다
+                        fileTree(it) { exclude { file -> file.name.matches(Regex("Q[A-Z].*\\.class")) } }
                     },
                 ),
             )

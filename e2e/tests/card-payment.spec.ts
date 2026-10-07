@@ -22,13 +22,17 @@ test.describe('카드 결제 — 접수 후 콜백 (설계서 3.3)', () => {
 
     // 전제 조건 확인 (TC-PAY-030 내용). 여기서 실패하면 콜백까지 가지 못한 것
     await test.step('Given: 카드 결제를 요청하면 PG 접수 후 PENDING 으로 응답한다', async () => {
+      // POST /api/v1/payments. ...TEST_CARD 는 cardType·cardNo 를 펼쳐 넣는다
       const result = await paymentClient.pay(member.id, {
         orderNumber: order.orderNumber,
         method: 'CARD',
         ...TEST_CARD,
       });
 
-      expect(result.status).toBe(200);
+      // expect: Playwright(@playwright/test)가 제공하는 검증 함수. core/fixtures.ts 가 다시 내보낸다
+      // 값이 기대와 다르면 테스트를 실패시키고 리포트에 기대값·실제값을 보여 준다
+      expect(result.status).toBe(200); // toBe: 값이 같은지
+      // toMatchObject: 적은 필드만 비교하고 나머지(approvedAt 등)는 무시
       expect(result.body.data).toMatchObject({
         orderNumber: order.orderNumber,
         method: 'CARD',

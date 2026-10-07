@@ -11,17 +11,11 @@ test.describe('카드 결제 — 접수 후 콜백 (설계서 3.3)', () => {
     // Given: 새 회원, 공용 상품 (core/fixtures.ts)
     member,
     sharedProduct,
-    pointClient,
     orderClient,
     paymentClient,
     db,
   }) => {
-    // 카드 결제엔 필요 없다. 요청한 흐름대로 둔다
     // 준비 단계라 expect 대신 dataOf: 실패하면 검증 실패가 아니라 예외로 멈춘다
-    await test.step('Given: 포인트를 충전한다', async () => {
-      ApiClient.dataOf(await pointClient.charge(member.id, 100_000));
-    });
-
     const order = await test.step('Given: 주문한다', async () =>
       ApiClient.dataOf(await orderClient.placeOrder(member.id, [{ productId: sharedProduct.productId, quantity: 2 }])),
     );

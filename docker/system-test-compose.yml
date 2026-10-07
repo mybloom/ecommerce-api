@@ -18,9 +18,9 @@
 #
 # PG 주소
 #   PG_BASE_URL      commerce-api 가 부르는 PG. 기본 http://wiremock:8080
-#   PG_CALLBACK_URL  commerce-api 가 PG 에 넘기는 콜백 주소. 기본 http://localhost:8080/api/v1/payments/pg/callback
-#     pg-simulator 는 콜백 URL 이 http://localhost:8080 으로 시작하지 않으면 거절한다 (PaymentDto.PREFIX_CALLBACK_URL).
-#     그래서 pg-callback-relay 가 pg-simulator 의 네트워크 안에서 localhost:8080 을 commerce-api:8080 으로 넘긴다.
+#   PG_CALLBACK_URL  commerce-api 가 PG 에 넘기는 콜백 주소. 기본 http://commerce-api:8080/api/v1/payments/pg/callback
+#     pg-simulator 는 콜백 URL 이 simulator.callback-url-prefix 로 시작하지 않으면 거절한다.
+#     기본값(localhost:8080)은 컨테이너 안에서 pg-simulator 자신이라, 여기서는 http://commerce-api:8080 으로 바꾼다.
 #     시스템 테스트(WireMock)에서는 콜백을 테스트가 직접 보낸다 (D-3). 이 값은 WireMock 에 그대로 전달될 뿐이다.
 
 name: commerce-system-test
@@ -47,7 +47,7 @@ services:
       DATASOURCE_REDIS_REPLICAS_0_HOST: redis
       DATASOURCE_REDIS_REPLICAS_0_PORT: 6379
       PG_BASEURL: ${PG_BASE_URL:-http://wiremock:8080}
-      PG_CALLBACKURL: ${PG_CALLBACK_URL:-http://localhost:8080/api/v1/payments/pg/callback}
+      PG_CALLBACKURL: ${PG_CALLBACK_URL:-http://commerce-api:8080/api/v1/payments/pg/callback}
     depends_on:
       mysql:
         condition: service_healthy
@@ -123,6 +123,7 @@ services:
       - "${SYSTEM_TEST_PG_SIMULATOR_PORT:-18082}:8082"
     environment:
       SPRING_PROFILES_ACTIVE: local
+      SIMULATOR_CALLBACKURLPREFIX: http://commerce-api:8080
       DATASOURCE_MYSQLJPA_MAIN_JDBCURL: jdbc:mysql://mysql:3306/paymentgateway
       DATASOURCE_MYSQLJPA_MAIN_USERNAME: application
       DATASOURCE_MYSQLJPA_MAIN_PASSWORD: application
@@ -141,23 +142,6 @@ services:
       timeout: 3s
       retries: 30
       start_period: 30s
-
-  # pg-simulator 와 네트워크를 공유한다. pg-simulator 안의 localhost:8080 → commerce-api:8080
-  pg-callback-relay:
-    profiles: [e2e]
-    image: alpine/socat:1.8.0.3
-    network_mode: "service:pg-simulator"
-    # localhost 가 ::1 로 먼저 풀릴 수 있어 IPv6 로 듣되 IPv4 도 받는다 (ipv6only=0)
-    command: ["TCP6-LISTEN:8080,ipv6only=0,fork,reuseaddr", "TCP:commerce-api:8080"]
-    depends_on:
-      pg-simulator:
-        condition: service_started
-    healthcheck:
-      # 릴레이를 거쳐 commerce-api 가 HTTP 로 답하는지 본다. 404 도 응답이 왔다는 뜻이라 상태 줄만 확인한다
-      test: ["CMD-SHELL", "wget -S -O /dev/null -T 3 http://localhost:8080/ 2>&1 | grep -q 'HTTP/'"]
-      interval: 5s
-      timeout: 5s
-      retries: 60
 
 volumes:
   mysql-data:

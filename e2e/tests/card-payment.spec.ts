@@ -14,15 +14,15 @@ test.describe('카드 결제 — 접수 후 콜백 (설계서 3.3)', () => {
     paymentClient,
     db,
   }) => {
-    await test.step('포인트를 충전한다', async () => {
+    await test.step('Given: 포인트를 충전한다', async () => {
       ApiClient.dataOf(await pointClient.charge(member.id, 100_000));
     });
 
-    const order = await test.step('주문한다', async () =>
+    const order = await test.step('Given: 주문한다', async () =>
       ApiClient.dataOf(await orderClient.placeOrder(member.id, [{ productId: sharedProduct.productId, quantity: 2 }])),
     );
 
-    await test.step('카드 결제를 요청하면 PG 접수 후 PENDING 으로 응답한다', async () => {
+    await test.step('Given: 카드 결제를 요청하면 PG 접수 후 PENDING 으로 응답한다', async () => {
       const result = await paymentClient.pay(member.id, {
         orderNumber: order.orderNumber,
         method: 'CARD',
@@ -38,7 +38,7 @@ test.describe('카드 결제 — 접수 후 콜백 (설계서 3.3)', () => {
       });
     });
 
-    await test.step('PG 대신 SUCCESS 콜백을 주문 총액으로 보낸다', async () => {
+    await test.step('When: PG 대신 SUCCESS 콜백을 주문 총액으로 보낸다', async () => {
       const result = await paymentClient.sendPgCallback({
         transactionKey: STUBBED_TRANSACTION_KEY,
         orderId: order.orderNumber,
@@ -49,7 +49,7 @@ test.describe('카드 결제 — 접수 후 콜백 (설계서 3.3)', () => {
       expect(result.status).toBe(200);
     });
 
-    await test.step('결제는 APPROVED, 주문은 PAID 다', async () => {
+    await test.step('Then: 결제는 APPROVED, 주문은 PAID 다', async () => {
       const payment = await db.findPaymentByOrderNumber(order.orderNumber);
       expect(payment).toMatchObject({
         method: 'CARD',

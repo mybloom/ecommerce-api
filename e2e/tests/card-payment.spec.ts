@@ -6,7 +6,9 @@ import { TEST_CARD } from '../core/testCards';
 const STUBBED_TRANSACTION_KEY = '20260101:TR:wiremock';
 
 test.describe('카드 결제 — 접수 후 콜백 (설계서 3.3)', () => {
+  // 설계서 3.3 TC-PAY-040: PENDING 결제(Given)에 SUCCESS 콜백(When) → 200, APPROVED, PAID(Then)
   test('TC-PAY-040 PG 가 SUCCESS 콜백을 주문 총액으로 보내면 결제는 APPROVED, 주문은 PAID 가 된다 @smoke @regression @REQ-PAY-03', async ({
+    // Given: 새 회원, 공용 상품 (core/fixtures.ts)
     member,
     sharedProduct,
     pointClient,
@@ -14,6 +16,8 @@ test.describe('카드 결제 — 접수 후 콜백 (설계서 3.3)', () => {
     paymentClient,
     db,
   }) => {
+    // 카드 결제엔 필요 없다. 요청한 흐름대로 둔다
+    // 준비 단계라 expect 대신 dataOf: 실패하면 검증 실패가 아니라 예외로 멈춘다
     await test.step('Given: 포인트를 충전한다', async () => {
       ApiClient.dataOf(await pointClient.charge(member.id, 100_000));
     });
@@ -22,6 +26,7 @@ test.describe('카드 결제 — 접수 후 콜백 (설계서 3.3)', () => {
       ApiClient.dataOf(await orderClient.placeOrder(member.id, [{ productId: sharedProduct.productId, quantity: 2 }])),
     );
 
+    // 전제 조건 확인 (TC-PAY-030 내용). 여기서 실패하면 콜백까지 가지 못한 것
     await test.step('Given: 카드 결제를 요청하면 PG 접수 후 PENDING 으로 응답한다', async () => {
       const result = await paymentClient.pay(member.id, {
         orderNumber: order.orderNumber,
@@ -46,9 +51,11 @@ test.describe('카드 결제 — 접수 후 콜백 (설계서 3.3)', () => {
         amount: order.totalAmount,
       });
 
+      // 성격상 Then. 위치는 아직 고민 중
       expect(result.status).toBe(200);
     });
 
+    // 주문 상세 API 가 없어 DB 로 확인 (D-2)
     await test.step('Then: 결제는 APPROVED, 주문은 PAID 다', async () => {
       const payment = await db.findPaymentByOrderNumber(order.orderNumber);
       expect(payment).toMatchObject({

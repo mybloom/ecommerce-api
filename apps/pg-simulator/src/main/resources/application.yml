@@ -24,6 +24,10 @@ spring:
       - logging.yml
       - monitoring.yml
 
+# 결제 요청의 callbackUrl 은 이 값으로 시작해야 한다. 컨테이너에서 띄울 때는 커머스의 서비스 이름으로 바꾼다
+simulator:
+  callback-url-prefix: http://localhost:8080
+
 springdoc:
   use-fqn: true
   swagger-ui:

@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import org.jspecify.annotations.Nullable;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -54,6 +55,62 @@ public class OrderV1Dto {
                     result.totalAmount(),
                     result.orderedAt(),
                     result.isDuplicatedRequest()
+            );
+        }
+    }
+
+    public record GetOrderResponse(
+            String orderNumber,
+            OrderUseCaseDto.OrderStatus status,
+            Long totalAmount,
+            ZonedDateTime orderedAt,
+            @Nullable ZonedDateTime paidAt,
+            List<OrderLineResponse> lines,
+            @Nullable PaymentResponse payment
+    ) {
+        public static GetOrderResponse from(OrderUseCaseDto.GetOrderResult result) {
+            return new GetOrderResponse(
+                    result.orderNumber(),
+                    result.status(),
+                    result.totalAmount(),
+                    result.orderedAt(),
+                    result.paidAt(),
+                    result.lines().stream().map(OrderLineResponse::from).toList(),
+                    result.payment() == null ? null : PaymentResponse.from(result.payment())
+            );
+        }
+    }
+
+    public record OrderLineResponse(
+            Long productId,
+            String productName,
+            Long unitPrice,
+            int quantity,
+            Long lineAmount
+    ) {
+        public static OrderLineResponse from(OrderUseCaseDto.OrderLineResult result) {
+            return new OrderLineResponse(
+                    result.productId(),
+                    result.productName(),
+                    result.unitPrice(),
+                    result.quantity(),
+                    result.lineAmount()
+            );
+        }
+    }
+
+    public record PaymentResponse(
+            OrderUseCaseDto.PaymentMethod method,
+            OrderUseCaseDto.PaymentStatus status,
+            @Nullable ZonedDateTime approvedAt,
+            @Nullable String failureReason
+    ) {
+        public static PaymentResponse from(OrderUseCaseDto.PaymentResult result) {
+            return new PaymentResponse(
+                    result.method(),
+                    result.status(),
+                    result.approvedAt(),
+                    result.failureReason()
             );
         }
     }

@@ -5,6 +5,8 @@ import com.loopers.application.order.OrderUseCaseDto;
 import com.loopers.interfaces.api.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -28,5 +30,17 @@ public class OrderV1Controller implements OrderV1ApiSpec {
         OrderUseCaseDto.PlaceOrderResult result = orderUseCase.place(request.toInfo(memberId, idempotencyKey));
 
         return ApiResponse.success(OrderV1Dto.PlaceOrderResponse.from(result));
+    }
+
+    @Override
+    @GetMapping("/{orderNumber}")
+    public ApiResponse<OrderV1Dto.GetOrderResponse> getOrder(
+            @RequestHeader(name = "X-MEMBER-ID") Long memberId,
+            @PathVariable String orderNumber
+    ) {
+        OrderUseCaseDto.GetOrderResult result = orderUseCase.getOrder(
+                new OrderUseCaseDto.GetOrderInfo(memberId, orderNumber));
+
+        return ApiResponse.success(OrderV1Dto.GetOrderResponse.from(result));
     }
 }

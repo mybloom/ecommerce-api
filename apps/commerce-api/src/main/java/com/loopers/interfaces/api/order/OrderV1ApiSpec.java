@@ -37,4 +37,29 @@ public interface OrderV1ApiSpec {
             ) String idempotencyKey,
             OrderV1Dto.PlaceOrderRequest request
     );
+
+    @Operation(
+            summary = "주문 상세 조회",
+            description = "헤더 X-MEMBER-ID 로 식별된 사용자의 주문 하나를 주문번호로 조회합니다. "
+                    + "주문 라인과 결제 정보를 함께 반환하며, 결제 요청 전이면 결제 정보는 비어 있습니다."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "주문 조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "필수 헤더 누락 또는 주문번호 형식 오류"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "주문이 없거나, 본인의 주문이 아니거나, 성립하지 못한 주문")
+    })
+    ApiResponse<OrderV1Dto.GetOrderResponse> getOrder(
+            @Parameter(
+                    name = "X-MEMBER-ID",
+                    required = true,
+                    in = ParameterIn.HEADER,
+                    description = "사용자 식별자 (헤더)"
+            ) Long memberId,
+            @Parameter(
+                    name = "orderNumber",
+                    required = true,
+                    in = ParameterIn.PATH,
+                    description = "주문번호 (예: 20260825-A3F9K2QP)"
+            ) String orderNumber
+    );
 }

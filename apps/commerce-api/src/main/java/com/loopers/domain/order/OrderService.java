@@ -33,6 +33,22 @@ public class OrderService {
     }
 
     /**
+     * 사용자가 보는 주문 조회 경로. 없는 주문, 다른 회원의 주문, 성립하지 못한 주문을
+     * 구분하지 않고 모두 "찾을 수 없음"으로 돌려준다 (참고: 06_order.md UC-3).
+     */
+    @Transactional(readOnly = true)
+    public Order retrieve(OrderServiceDto.RetrieveCommand command) {
+        Order order = orderRepository.findByOrderNumber(command.orderNumber())
+                .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "주문을 찾을 수 없습니다."));
+
+        if (!order.isOwnedBy(command.memberId()) || !order.isVisibleToUser()) {
+            throw new CoreException(ErrorType.NOT_FOUND, "주문을 찾을 수 없습니다.");
+        }
+
+        return order;
+    }
+
+    /**
      * 주문번호를 채번해 접수 상태로 저장한다. 채번은 접수 시점에 한다 (참고: Order-011).
      */
     @Transactional

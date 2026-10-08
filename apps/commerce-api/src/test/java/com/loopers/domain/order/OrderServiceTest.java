@@ -72,6 +72,90 @@ class OrderServiceTest {
     }
 
     @Nested
+    @DisplayName("retrieve - 사용자 주문 조회 시,")
+    class Retrieve {
+
+        @Test
+        @DisplayName("본인의 확정된 주문이면 그 주문을 반환한다")
+        void returnsOrder_whenOrderIsOwnedAndVisible() {
+            // given
+            Long memberId = OrderFixture.DEFAULT_MEMBER_ID;
+            OrderNumber orderNumber = OrderFixture.DEFAULT_ORDER_NUMBER;
+            Order savedOrder = OrderFixture.aConfirmedOrder();
+            when(orderRepository.findByOrderNumber(orderNumber)).thenReturn(Optional.of(savedOrder));
+
+            // when
+            Order result = orderService.retrieve(new OrderServiceDto.RetrieveCommand(memberId, orderNumber));
+
+            // then
+            assertThat(result).isSameAs(savedOrder);
+        }
+
+        @Test
+        @DisplayName("주문이 없으면 NOT_FOUND 예외가 발생한다")
+        void throwsNotFound_whenOrderDoesNotExist() {
+            // given
+            Long memberId = OrderFixture.DEFAULT_MEMBER_ID;
+            OrderNumber unknownOrderNumber = OrderNumber.of("20260827-ZZZZZZZZ");
+            when(orderRepository.findByOrderNumber(unknownOrderNumber)).thenReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> orderService.retrieve(
+                    new OrderServiceDto.RetrieveCommand(memberId, unknownOrderNumber)))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("다른 회원의 주문이면 NOT_FOUND 예외가 발생한다")
+        void throwsNotFound_whenOrderBelongsToAnotherMember() {
+            // given
+            Long otherMemberId = OrderFixture.DEFAULT_MEMBER_ID + 1;
+            OrderNumber orderNumber = OrderFixture.DEFAULT_ORDER_NUMBER;
+            when(orderRepository.findByOrderNumber(orderNumber))
+                    .thenReturn(Optional.of(OrderFixture.aConfirmedOrder()));
+
+            // when & then
+            assertThatThrownBy(() -> orderService.retrieve(
+                    new OrderServiceDto.RetrieveCommand(otherMemberId, orderNumber)))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("접수만 된 주문이면 NOT_FOUND 예외가 발생한다")
+        void throwsNotFound_whenOrderIsPending() {
+            // given
+            Long memberId = OrderFixture.DEFAULT_MEMBER_ID;
+            OrderNumber orderNumber = OrderFixture.DEFAULT_ORDER_NUMBER;
+            when(orderRepository.findByOrderNumber(orderNumber))
+                    .thenReturn(Optional.of(OrderFixture.aDraftedOrder()));
+
+            // when & then
+            assertThatThrownBy(() -> orderService.retrieve(
+                    new OrderServiceDto.RetrieveCommand(memberId, orderNumber)))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("확정에 실패한 주문이면 NOT_FOUND 예외가 발생한다")
+        void throwsNotFound_whenOrderFailed() {
+            // given
+            Long memberId = OrderFixture.DEFAULT_MEMBER_ID;
+            OrderNumber orderNumber = OrderFixture.DEFAULT_ORDER_NUMBER;
+            when(orderRepository.findByOrderNumber(orderNumber))
+                    .thenReturn(Optional.of(OrderFixture.aFailedOrder()));
+
+            // when & then
+            assertThatThrownBy(() -> orderService.retrieve(
+                    new OrderServiceDto.RetrieveCommand(memberId, orderNumber)))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
+        }
+    }
+
+    @Nested
     @DisplayName("draft - 주문 접수 시,")
     class Draft {
 

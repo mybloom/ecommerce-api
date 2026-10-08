@@ -62,6 +62,42 @@ class PaymentServiceTest {
     }
 
     @Nested
+    @DisplayName("findOptionalByOrderId - 주문의 결제 조회 시,")
+    class FindOptionalByOrderId {
+
+        @Test
+        @DisplayName("주문에 결제가 있으면 그 결제를 담은 Optional을 반환한다")
+        void returnsPayment_whenPaymentExists() {
+            // given
+            Long orderId = PaymentFixture.DEFAULT_ORDER_ID;
+            Payment savedPayment = PaymentFixture.anApprovedPayment();
+            when(paymentRepository.findByOrderId(orderId)).thenReturn(Optional.of(savedPayment));
+
+            // when
+            Optional<Payment> result = paymentService.findOptionalByOrderId(
+                    new PaymentServiceDto.FindByOrderIdCommand(orderId));
+
+            // then
+            assertThat(result).containsSame(savedPayment);
+        }
+
+        @Test
+        @DisplayName("결제 요청 전인 주문이면 빈 Optional을 반환한다")
+        void returnsEmpty_whenPaymentDoesNotExist() {
+            // given
+            Long orderId = PaymentFixture.DEFAULT_ORDER_ID;
+            when(paymentRepository.findByOrderId(orderId)).thenReturn(Optional.empty());
+
+            // when
+            Optional<Payment> result = paymentService.findOptionalByOrderId(
+                    new PaymentServiceDto.FindByOrderIdCommand(orderId));
+
+            // then
+            assertThat(result).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("approve - 결제 승인 시,")
     class Approve {
 

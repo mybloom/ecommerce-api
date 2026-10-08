@@ -128,6 +128,13 @@ public class Order extends BaseEntity {
     }
 
     /**
+     * 사용자 조회에 노출할 주문인지 반환한다. PENDING, ORDER_FAILED 는 성립하지 못한 주문이라 숨긴다 (참고: UC-2, UC-3).
+     */
+    public boolean isVisibleToUser() {
+        return status.isVisibleToUser();
+    }
+
+    /**
      * 총액 = 라인 합계라는 불변식을 밖에서 깨지 못하도록 수정 불가 목록을 돌려준다 (참고: Order-008).
      */
     public List<OrderLine> getLines() {

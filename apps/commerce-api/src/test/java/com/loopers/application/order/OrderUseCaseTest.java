@@ -8,14 +8,19 @@ import com.loopers.domain.member.Member;
 import com.loopers.domain.member.MemberRepository;
 import com.loopers.domain.order.IdempotencyKey;
 import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderNumber;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.payment.Payment;
+import com.loopers.domain.payment.PaymentMethod;
+import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductFixture;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.ProductStatus;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import com.loopers.domain.shared.Money;
 import com.loopers.support.fixture.MemberFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -51,17 +56,20 @@ class OrderUseCaseTest {
     private final MemberRepository memberRepository;
     private final BrandRepository brandRepository;
     private final ProductRepository productRepository;
+    private final PaymentRepository paymentRepository;
     private final DatabaseCleanUp databaseCleanUp;
 
     @Autowired
     public OrderUseCaseTest(OrderUseCase orderUseCase, OrderRepository orderRepository,
                             MemberRepository memberRepository, BrandRepository brandRepository,
-                            ProductRepository productRepository, DatabaseCleanUp databaseCleanUp) {
+                            ProductRepository productRepository, PaymentRepository paymentRepository,
+                            DatabaseCleanUp databaseCleanUp) {
         this.orderUseCase = orderUseCase;
         this.orderRepository = orderRepository;
         this.memberRepository = memberRepository;
         this.brandRepository = brandRepository;
         this.productRepository = productRepository;
+        this.paymentRepository = paymentRepository;
         this.databaseCleanUp = databaseCleanUp;
     }
 
@@ -328,6 +336,83 @@ class OrderUseCaseTest {
                     () -> assertThat(failures).hasSize(1),
                     () -> assertThat(remainingStock).isEqualTo(0)
             );
+        }
+    }
+
+    @Nested
+    @DisplayName("getOrder")
+    class GetOrder {
+
+        private Product product;
+
+        @BeforeEach
+        void setUpProduct() {
+            this.product = productRepository.save(ProductFixture.aProductForBrand(brand.getId()));
+        }
+
+        private OrderUseCaseDto.PlaceOrderResult anAwaitingPaymentOrder(int quantity) {
+            return orderUseCase.place(anOrderInfo(UUID.randomUUID().toString(), product.getId(), quantity));
+        }
+
+        @Test
+        @DisplayName("결제 요청 전인 주문을 조회하면 주문 라인을 담고 결제 정보는 비어 있다")
+        void returnsLinesWithoutPayment_whenPaymentDoesNotExist() {
+            // given
+            int orderQuantity = 2;
+            OrderUseCaseDto.PlaceOrderResult placed = anAwaitingPaymentOrder(orderQuantity);
+
+            // when
+            OrderUseCaseDto.GetOrderResult result = orderUseCase.getOrder(
+                    new OrderUseCaseDto.GetOrderInfo(member.getId(), placed.orderNumber()));
+
+            // then
+            assertAll(
+                    () -> assertThat(result.orderNumber()).isEqualTo(placed.orderNumber()),
+                    () -> assertThat(result.status()).isEqualTo(OrderUseCaseDto.OrderStatus.AWAITING_PAYMENT),
+                    () -> assertThat(result.lines()).hasSize(1),
+                    () -> assertThat(result.lines().get(0).productId()).isEqualTo(product.getId()),
+                    () -> assertThat(result.lines().get(0).quantity()).isEqualTo(orderQuantity),
+                    () -> assertThat(result.payment()).isNull()
+            );
+        }
+
+        @Test
+        @DisplayName("결제가 있는 주문을 조회하면 결제 정보를 함께 담는다")
+        void returnsPayment_whenPaymentExists() {
+            // given
+            OrderUseCaseDto.PlaceOrderResult placed = anAwaitingPaymentOrder(1);
+            Order order = orderRepository.findByOrderNumber(
+                    OrderNumber.of(placed.orderNumber())).orElseThrow();
+            Payment payment = Payment.request(
+                    order.getId(), member.getId(), PaymentMethod.POINT, Money.of(placed.totalAmount()));
+            payment.approve(null);
+            paymentRepository.save(payment);
+
+            // when
+            OrderUseCaseDto.GetOrderResult result = orderUseCase.getOrder(
+                    new OrderUseCaseDto.GetOrderInfo(member.getId(), placed.orderNumber()));
+
+            // then
+            assertAll(
+                    () -> assertThat(result.payment().method()).isEqualTo(OrderUseCaseDto.PaymentMethod.POINT),
+                    () -> assertThat(result.payment().status()).isEqualTo(OrderUseCaseDto.PaymentStatus.APPROVED),
+                    () -> assertThat(result.payment().approvedAt()).isNotNull()
+            );
+        }
+
+        @Test
+        @DisplayName("다른 회원의 주문을 조회하면 NOT_FOUND가 발생한다")
+        void throwsNotFound_whenOrderBelongsToAnotherMember() {
+            // given
+            OrderUseCaseDto.PlaceOrderResult placed = anAwaitingPaymentOrder(1);
+            Member otherMember = memberRepository.save(
+                    MemberFixture.aMemberWithLoginIdAndEmail("otherUser", "other@test.com"));
+
+            // when & then
+            assertThatThrownBy(() -> orderUseCase.getOrder(
+                    new OrderUseCaseDto.GetOrderInfo(otherMember.getId(), placed.orderNumber())))
+                    .isInstanceOfSatisfying(CoreException.class, e ->
+                            assertThat(e.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
         }
     }
 }

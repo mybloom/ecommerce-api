@@ -161,10 +161,26 @@
 
 **출력**
 
-주문 상세 정보:
-- 주문번호, 주문 상태, 총 결제 금액, 주문 시각, 결제 시각
-- 주문 라인 목록 — 상품 ID, 주문 시점 상품명, 주문 시점 단가, 수량, 라인 금액
-- 결제 정보 — 결제 수단, 결제 상태, 승인 시각, 실패 사유 (참고: 07_payment.md B.1)
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `orderNumber` | String | 주문번호 (참고: Order-011) |
+| `status` | OrderStatus | 주문 상태 |
+| `totalAmount` | Long | 총 결제 금액 |
+| `orderedAt` | ZonedDateTime | 주문 접수 시각 |
+| `paidAt` | ZonedDateTime | 결제 완료 시각. `PAID`가 아니면 비어 있음 |
+| `lines` | List&lt;Line&gt; | 주문 라인 목록 |
+| `lines[].productId` | Long | 주문한 상품 |
+| `lines[].productName` | String | 주문 시점 상품명 (참고: Order-001) |
+| `lines[].unitPrice` | Long | 주문 시점 단가 (참고: Order-001) |
+| `lines[].quantity` | Int | 주문 수량 |
+| `lines[].lineAmount` | Long | `unitPrice × quantity` |
+| `payment` | Payment | 결제 정보. 결제 요청 전이면 비어 있음 (참고: 07_payment.md B.1) |
+| `payment.method` | PaymentMethod | 결제 수단 |
+| `payment.status` | PaymentStatus | 결제 상태 |
+| `payment.approvedAt` | ZonedDateTime | 승인 시각. `APPROVED`가 아니면 비어 있음 |
+| `payment.failureReason` | String | 실패 사유. `FAILED`가 아니면 비어 있음 |
+
+> 결제 정보를 `payment` 하나로 묶는 이유는 "결제 전" 상태를 필드 하나로 드러내기 위해서다. 펼쳐 두면 네 필드가 각각 비어 있는 것과 결제가 없는 것을 구분하기 어렵다.
 
 **전제 조건**
 - 사용자는 로그인 상태여야 함
@@ -173,6 +189,7 @@
 **필터/노출 정책**
 - 다른 회원의 주문을 조회하면 "찾을 수 없음"(404)으로 응답한다. 403이 아니라 404인 이유는 주문의 존재 여부 자체를 노출하지 않기 위해서다
 - `PENDING`, `ORDER_FAILED` 주문도 "찾을 수 없음"(404)으로 응답한다. UC-2의 노출 정책과 일치시킨다
+    - 같은 `Idempotency-Key`로 재요청해 `ORDER_FAILED` 주문의 주문번호를 받았더라도 조회는 404다. 클라이언트는 응답의 `status`로 실패를 판단하고 새 키로 다시 주문한다 (참고: Order-004, Order-010)
 - 상품명과 단가는 주문 시점의 스냅샷 값이다. 현재 상품 정보와 다를 수 있다 (참고: Order-001)
 - `status`가 `PAID`가 아니면 `paidAt`은 비어 있다
 - 결제 요청 전인 주문은 결제 정보 전체가 비어 있다

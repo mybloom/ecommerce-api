@@ -321,6 +321,31 @@ class OrderTest {
     }
 
     @Nested
+    @DisplayName("isVisibleToUser - 사용자 노출 여부 확인 시,")
+    class IsVisibleToUser {
+
+        @Test
+        @DisplayName("확정된 주문은 사용자에게 노출된다")
+        void returnsTrue_whenOrderIsConfirmed() {
+            // given
+            Order order = OrderFixture.aConfirmedOrder();
+
+            // when & then
+            assertThat(order.isVisibleToUser()).isTrue();
+        }
+
+        @Test
+        @DisplayName("접수만 된 주문은 사용자에게 노출되지 않는다")
+        void returnsFalse_whenOrderIsPending() {
+            // given
+            Order order = OrderFixture.aDraftedOrder();
+
+            // when & then
+            assertThat(order.isVisibleToUser()).isFalse();
+        }
+    }
+
+    @Nested
     @DisplayName("getLines - 라인 목록 조회 시,")
     class GetLines {
 

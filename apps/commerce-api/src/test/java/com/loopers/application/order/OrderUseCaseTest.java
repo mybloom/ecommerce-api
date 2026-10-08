@@ -25,7 +25,6 @@ import com.loopers.support.fixture.MemberFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -342,7 +341,6 @@ class OrderUseCaseTest {
 
     @Nested
     @DisplayName("getOrder")
-    @Disabled("5단계에서 활성화 — 도메인 서비스가 아직 스켈레톤이다")
     class GetOrder {
 
         private Product product;

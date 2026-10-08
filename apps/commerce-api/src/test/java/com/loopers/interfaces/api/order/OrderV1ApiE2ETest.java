@@ -26,7 +26,6 @@ import com.loopers.support.fixture.MemberFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -259,7 +258,6 @@ class OrderV1ApiE2ETest {
 
     @Nested
     @DisplayName("GET /api/v1/orders/{orderNumber}")
-    @Disabled("5단계에서 활성화 — UseCase가 아직 스켈레톤이다")
     class GetOrder {
 
         private static final String PAYMENT_ENDPOINT = "/api/v1/payments";

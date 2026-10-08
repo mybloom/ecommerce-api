@@ -41,7 +41,7 @@ public class PaymentService {
      */
     @Transactional(readOnly = true)
     public Optional<Payment> findOptionalByOrderId(PaymentServiceDto.FindByOrderIdCommand command) {
-        throw new UnsupportedOperationException("3단계에서 구현");
+        return paymentRepository.findByOrderId(command.orderId());
     }
 
     @Transactional

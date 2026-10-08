@@ -38,7 +38,14 @@ public class OrderService {
      */
     @Transactional(readOnly = true)
     public Order retrieve(OrderServiceDto.RetrieveCommand command) {
-        throw new UnsupportedOperationException("3단계에서 구현");
+        Order order = orderRepository.findByOrderNumber(command.orderNumber())
+                .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "주문을 찾을 수 없습니다."));
+
+        if (!order.isOwnedBy(command.memberId()) || !order.isVisibleToUser()) {
+            throw new CoreException(ErrorType.NOT_FOUND, "주문을 찾을 수 없습니다.");
+        }
+
+        return order;
     }
 
     /**

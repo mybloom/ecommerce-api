@@ -1,6 +1,9 @@
 package com.loopers.application.order;
 
 import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderLine;
+import com.loopers.domain.payment.Payment;
+import org.jspecify.annotations.Nullable;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -13,6 +16,14 @@ public class OrderUseCaseDto {
      */
     public enum OrderStatus {
         PENDING, AWAITING_PAYMENT, ORDER_FAILED, PAID, PAYMENT_FAILED
+    }
+
+    public enum PaymentMethod {
+        POINT, CARD
+    }
+
+    public enum PaymentStatus {
+        PENDING, APPROVED, FAILED
     }
 
     public record OrderItemInfo(Long productId, int quantity) {
@@ -53,6 +64,69 @@ public class OrderUseCaseDto {
                     order.getTotalAmount().getAmount(),
                     order.getOrderedAt(),
                     isDuplicatedRequest
+            );
+        }
+    }
+
+    public record GetOrderInfo(Long memberId, String orderNumber) {
+    }
+
+    /**
+     * 내부 식별자 id 와 PG 거래 식별자는 담지 않는다 (참고: Order-011, 06_order.md UC-3).
+     * 결제 요청 전인 주문은 payment 가 비어 있다.
+     */
+    public record GetOrderResult(
+            String orderNumber,
+            OrderStatus status,
+            Long totalAmount,
+            ZonedDateTime orderedAt,
+            @Nullable ZonedDateTime paidAt,
+            List<OrderLineResult> lines,
+            @Nullable PaymentResult payment
+    ) {
+        public static GetOrderResult from(Order order, @Nullable Payment payment) {
+            return new GetOrderResult(
+                    order.getOrderNumber().getValue(),
+                    OrderStatus.valueOf(order.getStatus().name()),
+                    order.getTotalAmount().getAmount(),
+                    order.getOrderedAt(),
+                    order.getPaidAt(),
+                    order.getLines().stream().map(OrderLineResult::from).toList(),
+                    payment == null ? null : PaymentResult.from(payment)
+            );
+        }
+    }
+
+    public record OrderLineResult(
+            Long productId,
+            String productName,
+            Long unitPrice,
+            int quantity,
+            Long lineAmount
+    ) {
+        public static OrderLineResult from(OrderLine line) {
+            return new OrderLineResult(
+                    line.getProductId(),
+                    line.getProductName(),
+                    line.getUnitPrice().getAmount(),
+                    line.getQuantity(),
+                    line.lineAmount().getAmount()
+            );
+        }
+    }
+
+    public record PaymentResult(
+            PaymentMethod method,
+            PaymentStatus status,
+            @Nullable ZonedDateTime approvedAt,
+            @Nullable String failureReason
+    ) {
+        public static PaymentResult from(Payment payment) {
+            return new PaymentResult(
+                    PaymentMethod.valueOf(payment.getMethod().name()),
+                    PaymentStatus.valueOf(payment.getStatus().name()),
+                    payment.getApprovedAt(),
+                    payment.getFailureReason()
             );
         }
     }

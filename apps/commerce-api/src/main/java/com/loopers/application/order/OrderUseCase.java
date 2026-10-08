@@ -44,6 +44,13 @@ public class OrderUseCase {
     }
 
     /**
+     * 본인의, 사용자에게 노출되는 주문의 상세를 돌려준다 (참고: 06_order.md UC-3).
+     */
+    public OrderUseCaseDto.GetOrderResult getOrder(OrderUseCaseDto.GetOrderInfo info) {
+        throw new UnsupportedOperationException("2단계에서 구현");
+    }
+
+    /**
      * 제약 위반 직후의 재조회. 위반이 idempotencyKey 때문이었다면 상대가 커밋한 주문이 잡힌다.
      * 못 찾으면 전제(orderNumber는 충돌하지 않는다)가 깨진 것이므로 그대로 실패시킨다.
      */

@@ -2,6 +2,8 @@ package com.loopers.application.order;
 
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderLine;
+import com.loopers.domain.order.OrderNumber;
+import com.loopers.domain.order.OrderServiceDto;
 import com.loopers.domain.payment.Payment;
 import org.jspecify.annotations.Nullable;
 
@@ -69,6 +71,9 @@ public class OrderUseCaseDto {
     }
 
     public record GetOrderInfo(Long memberId, String orderNumber) {
+        public OrderServiceDto.RetrieveCommand toCommand() {
+            return new OrderServiceDto.RetrieveCommand(memberId, OrderNumber.of(orderNumber));
+        }
     }
 
     /**

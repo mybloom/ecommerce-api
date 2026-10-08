@@ -4,11 +4,15 @@ import com.loopers.domain.order.IdempotencyKey;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.order.OrderServiceDto;
+import com.loopers.domain.payment.Payment;
+import com.loopers.domain.payment.PaymentService;
+import com.loopers.domain.payment.PaymentServiceDto;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 
 @RequiredArgsConstructor
@@ -17,6 +21,7 @@ public class OrderUseCase {
 
     private final OrderService orderService;
     private final OrderProcessor orderProcessor;
+    private final PaymentService paymentService;
 
     /**
      * 주문을 접수하고 재고를 확보해 결제 가능한 상태로 만든다 (참고: 06_order.md UC-1).
@@ -45,9 +50,18 @@ public class OrderUseCase {
 
     /**
      * 본인의, 사용자에게 노출되는 주문의 상세를 돌려준다 (참고: 06_order.md UC-3).
+     * <p>
+     * 주문 라인은 지연 로딩이고 open-in-view 가 꺼져 있어, Result 를 트랜잭션 안에서 만들어야 한다.
+     * 결제는 Order 가 모르므로(참고: 07_payment.md Payment-001) 여기서 주문 id 로 찾아 붙인다.
      */
+    @Transactional(readOnly = true)
     public OrderUseCaseDto.GetOrderResult getOrder(OrderUseCaseDto.GetOrderInfo info) {
-        throw new UnsupportedOperationException("2단계에서 구현");
+        Order order = orderService.retrieve(info.toCommand());
+        Payment payment = paymentService.findOptionalByOrderId(
+                        new PaymentServiceDto.FindByOrderIdCommand(order.getId()))
+                .orElse(null);
+
+        return OrderUseCaseDto.GetOrderResult.from(order, payment);
     }
 
     /**

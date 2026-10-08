@@ -10,6 +10,9 @@ public class OrderServiceDto {
     public record FindByOrderNumberCommand(OrderNumber orderNumber) {
     }
 
+    public record RetrieveCommand(Long memberId, OrderNumber orderNumber) {
+    }
+
     public record DraftCommand(Long memberId, IdempotencyKey idempotencyKey) {
     }
 

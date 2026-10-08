@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+
 @RequiredArgsConstructor
 @Service
 public class PaymentService {
@@ -31,6 +33,15 @@ public class PaymentService {
     public Payment findByOrderId(PaymentServiceDto.FindByOrderIdCommand command) {
         return paymentRepository.findByOrderId(command.orderId())
                 .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "결제를 찾을 수 없습니다."));
+    }
+
+    /**
+     * 주문 조회가 결제 정보를 붙일 때 쓴다. 결제 요청 전인 주문에는 결제가 없는 것이 정상이라
+     * 예외 대신 Optional로 돌려준다 (참고: 06_order.md UC-3).
+     */
+    @Transactional(readOnly = true)
+    public Optional<Payment> findOptionalByOrderId(PaymentServiceDto.FindByOrderIdCommand command) {
+        throw new UnsupportedOperationException("3단계에서 구현");
     }
 
     @Transactional

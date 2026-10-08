@@ -48,12 +48,37 @@ dependencies {
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
+    // TestKindFilter 가 PostDiscoveryFilter 를 구현한다. 루트는 런타임에만 둔다
+    testImplementation("org.junit.platform:junit-platform-launcher")
 }
 
 // 실제 pg-simulator(8082)를 부르는 테스트는 기본 스위트에서 뺀다.
 // 외부 프로세스가 필요하고 PG가 40% 확률로 거절해 결과가 매번 달라진다.
 tasks.test {
     useJUnitPlatform { excludeTags("external") }
+}
+
+// test 를 Docker 필요 여부로 둘로 나눈다. 분류 기준은 TestKindFilter 에 있다 — 테스트에 태그를 달지 않는다.
+// 두 태스크를 합치면 test 와 같다.
+//   ./gradlew :apps:commerce-api:unitTest         Docker 없이
+//   ./gradlew :apps:commerce-api:integrationTest  Testcontainers
+mapOf(
+    "unitTest" to "순수 JUnit, MockitoExtension, @WebMvcTest. Docker 가 필요 없다",
+    "integrationTest" to "@SpringBootTest. Testcontainers 로 MySQL 을 띄워 Docker 가 필요하다",
+).forEach { (name, desc) ->
+    tasks.register<Test>(name) {
+        description = desc
+        group = "verification"
+        testClassesDirs = sourceSets["test"].output.classesDirs
+        classpath = sourceSets["test"].runtimeClasspath
+        useJUnitPlatform { excludeTags("external") }
+        // 루트 build.gradle.kts 가 test 에 거는 설정(프로파일, 타임존, 순차 실행)을 그대로 따른다
+        val base = tasks.test.get()
+        maxParallelForks = base.maxParallelForks
+        systemProperties(base.systemProperties)
+        jvmArgs = base.jvmArgs
+        systemProperty("loopers.test.kind", name.removeSuffix("Test"))
+    }
 }
 
 tasks.register<Test>("externalTest") {

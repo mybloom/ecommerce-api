@@ -1,0 +1,24 @@
+{
+  "name": "PG 승인 요청 접수 (기본 응답)",
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "urlPath": "/api/v1/payments"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "meta": {
+        "result": "SUCCESS"
+      },
+      "data": {
+        "transactionKey": "20260101:TR:wiremock",
+        "status": "PENDING",
+        "reason": null
+      }
+    }
+  }
+}

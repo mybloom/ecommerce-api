@@ -1,0 +1,10 @@
+# docker/app.Dockerfile 빌드 컨텍스트(저장소 루트)에서 뺀다.
+# 소스와 Gradle 설정만 있으면 bootJar 를 만들 수 있다.
+.git
+.gradle
+.idea
+**/build
+**/out
+docker
+docs
+*.pdf

@@ -1,0 +1,147 @@
+# 결제 시스템 테스트·E2E 환경 (docs/test/02-테스트-계획서.md 4절)
+#
+# 시스템 테스트 — PG 대역은 WireMock. 응답을 시나리오별로 고정한다 (D-1)
+#   기동: docker compose -f docker/system-test-compose.yml up -d --build --wait
+#   종료: docker compose -f docker/system-test-compose.yml down -v
+#
+# E2E(nightly) — 실제 pg-simulator. 결과가 무작위라 판정용 테스트에는 쓰지 않는다
+#   기동: PG_BASE_URL=http://pg-simulator:8082 docker compose -f docker/system-test-compose.yml --profile e2e up -d --build --wait
+#   종료: docker compose -f docker/system-test-compose.yml --profile e2e down -v
+#   (종료할 때도 --profile e2e 를 붙여야 pg-simulator 컨테이너까지 내려간다)
+#
+# 호스트에서 닿는 주소 (기본값. infra-compose.yml 의 3306·6379·6380·9092·19092·9099 와 겹치지 않는다)
+#   commerce-api      http://localhost:18080          SYSTEM_TEST_API_PORT
+#   commerce-api 헬스 http://localhost:18081/actuator/health   SYSTEM_TEST_API_MANAGEMENT_PORT
+#   MySQL             localhost:13306 (application/application, DB loopers)   SYSTEM_TEST_MYSQL_PORT
+#   WireMock          http://localhost:18090 (매핑 등록: /__admin/mappings)   SYSTEM_TEST_WIREMOCK_PORT
+#   pg-simulator      http://localhost:18082 (e2e 만)  SYSTEM_TEST_PG_SIMULATOR_PORT
+#
+# PG 주소
+#   PG_BASE_URL      commerce-api 가 부르는 PG. 기본 http://wiremock:8080
+#   PG_CALLBACK_URL  commerce-api 가 PG 에 넘기는 콜백 주소. 기본 http://commerce-api:8080/api/v1/payments/pg/callback
+#     pg-simulator 는 콜백 URL 이 simulator.callback-url-prefix 로 시작하지 않으면 거절한다.
+#     기본값(localhost:8080)은 컨테이너 안에서 pg-simulator 자신이라, 여기서는 http://commerce-api:8080 으로 바꾼다.
+#     시스템 테스트(WireMock)에서는 콜백을 테스트가 직접 보낸다 (D-3). 이 값은 WireMock 에 그대로 전달될 뿐이다.
+
+name: commerce-system-test
+
+services:
+  commerce-api:
+    build:
+      context: ..
+      dockerfile: docker/app.Dockerfile
+      args:
+        APP: commerce-api
+    image: commerce-system-test/commerce-api:local
+    ports:
+      - "${SYSTEM_TEST_API_PORT:-18080}:8080"
+      - "${SYSTEM_TEST_API_MANAGEMENT_PORT:-18081}:8081"
+    environment:
+      # local 프로파일: ddl-auto create 로 기동 때마다 스키마를 새로 만든다. 접속 주소만 컨테이너 이름으로 바꾼다
+      SPRING_PROFILES_ACTIVE: local
+      DATASOURCE_MYSQLJPA_MAIN_JDBCURL: jdbc:mysql://mysql:3306/loopers
+      DATASOURCE_MYSQLJPA_MAIN_USERNAME: application
+      DATASOURCE_MYSQLJPA_MAIN_PASSWORD: application
+      DATASOURCE_REDIS_MASTER_HOST: redis
+      DATASOURCE_REDIS_MASTER_PORT: 6379
+      DATASOURCE_REDIS_REPLICAS_0_HOST: redis
+      DATASOURCE_REDIS_REPLICAS_0_PORT: 6379
+      PG_BASEURL: ${PG_BASE_URL:-http://wiremock:8080}
+      PG_CALLBACKURL: ${PG_CALLBACK_URL:-http://commerce-api:8080/api/v1/payments/pg/callback}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      wiremock:
+        condition: service_healthy
+      # e2e 프로파일일 때만 존재한다. 없으면 기다리지 않는다
+      pg-simulator:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "${SYSTEM_TEST_MYSQL_PORT:-13306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: application
+      MYSQL_PASSWORD: application
+      MYSQL_DATABASE: loopers
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./system-test/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # 127.0.0.1(TCP)로 묻는다. 초기화 중 임시 서버는 소켓만 열어서, 소켓으로 물으면 초기화가 끝나기 전에 healthy 가 된다
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # commerce-api 와 pg-simulator 가 redis 모듈을 불러온다. 없으면 헬스가 DOWN 이 된다
+  redis:
+    image: redis:7.0
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+
+  wiremock:
+    image: wiremock/wiremock:3.13.1
+    command: ["--port", "8080", "--disable-banner"]
+    ports:
+      - "${SYSTEM_TEST_WIREMOCK_PORT:-18090}:8080"
+    volumes:
+      - ./system-test/wiremock/mappings:/home/wiremock/mappings:ro
+      - ./system-test/wiremock/__files:/home/wiremock/__files:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/__admin/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pg-simulator:
+    profiles: [e2e]
+    build:
+      context: ..
+      dockerfile: docker/app.Dockerfile
+      args:
+        APP: pg-simulator
+    image: commerce-system-test/pg-simulator:local
+    ports:
+      - "${SYSTEM_TEST_PG_SIMULATOR_PORT:-18082}:8082"
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SIMULATOR_CALLBACKURLPREFIX: http://commerce-api:8080
+      DATASOURCE_MYSQLJPA_MAIN_JDBCURL: jdbc:mysql://mysql:3306/paymentgateway
+      DATASOURCE_MYSQLJPA_MAIN_USERNAME: application
+      DATASOURCE_MYSQLJPA_MAIN_PASSWORD: application
+      DATASOURCE_REDIS_MASTER_HOST: redis
+      DATASOURCE_REDIS_MASTER_PORT: 6379
+      DATASOURCE_REDIS_REPLICAS_0_HOST: redis
+      DATASOURCE_REDIS_REPLICAS_0_PORT: 6379
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8083/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+volumes:
+  mysql-data:
